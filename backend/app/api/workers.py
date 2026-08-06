@@ -1,13 +1,12 @@
 """
 Worker API Endpoints
 
-Expose AI workers through REST endpoints.
+Expose AI workflows through REST endpoints.
 """
 
 from fastapi import APIRouter
 
-from app.ai.workers.product_hunter import ProductHunterWorker
-from app.ai.workers.task import WorkerTask
+from app.workflow_engine.workflow_engine import WorkflowEngine
 
 router = APIRouter(
     prefix="/workers",
@@ -18,19 +17,14 @@ router = APIRouter(
 @router.post("/product-hunter")
 def run_product_hunter(payload: dict):
     """
-    Analyze a company website.
+    Analyze a company website using the Affiliate Discovery Workflow.
     """
 
-    url = payload.get("url")
+    engine = WorkflowEngine()
 
-    worker = ProductHunterWorker()
-
-    task = WorkerTask(
-        worker_name="ProductHunter",
-        action="analyze_website",
+    return engine.run(
+        workflow_name="affiliate_discovery",
         payload={
-            "url": url,
+            "url": payload.get("url")
         },
     )
-
-    return worker.execute(task)

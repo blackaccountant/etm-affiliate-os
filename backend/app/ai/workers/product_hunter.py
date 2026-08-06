@@ -1,14 +1,14 @@
 """
 Product Hunter Worker
 
-Discovers affiliate opportunities from company websites.
+Discovers affiliate opportunities from websites
+through the Affiliate Discovery Workflow.
 """
 
-from __future__ import annotations
-
 from app.ai.workers.base_worker import BaseWorker
-from app.ai.workers.result import WorkerResult
 from app.ai.workers.task import WorkerTask
+from app.ai.workers.result import WorkerResult
+
 from app.workflows.affiliate.affiliate_discovery_workflow import (
     AffiliateDiscoveryWorkflow,
 )
@@ -20,27 +20,48 @@ class ProductHunterWorker(BaseWorker):
     """
 
     def __init__(self):
-        super().__init__(name="ProductHunter")
         self.workflow = AffiliateDiscoveryWorkflow()
 
-    def run(self, task: WorkerTask) -> WorkerResult:
+    def run(self, task: WorkerTask):
         """
-        Execute Product Hunter.
+        Execute product hunting task.
         """
 
-        url = task.payload.get("url")
+        try:
+            result = self.workflow.execute(
+                task.payload
+            )
 
-        workflow = self.workflow.execute(url)
+            return WorkerResult(
+                success=True,
+                worker_name="ProductHunter",
+                action=task.action,
+                message="Affiliate discovery completed.",
+                data=result.model_dump(),
+                metadata={
+                    "workflow": "AffiliateDiscoveryWorkflow"
+                },
+            )
 
-        return WorkerResult(
-            success=True,
-            worker_name=self.name,
-            action=task.action,
-            message="Affiliate discovery completed.",
-            data={
-                "analysis": workflow.analysis.model_dump(),
-                "intelligence": workflow.intelligence.model_dump(),
-                "database": workflow.database.model_dump(),
-                "metadata": workflow.metadata,
-            },
-        )
+        except Exception as e:
+
+            return WorkerResult(
+                success=False,
+                worker_name="ProductHunter",
+                action=task.action,
+                message="Worker execution failed.",
+                data={},
+                metadata={},
+                error=str(e),
+            )
+
+
+    def execute(self, task: WorkerTask):
+        """
+        Backwards compatibility.
+
+        Existing tests and callers use execute().
+        New architecture uses run().
+        """
+
+        return self.run(task)

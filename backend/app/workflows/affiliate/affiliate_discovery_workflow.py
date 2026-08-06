@@ -1,10 +1,8 @@
 """
 Affiliate Discovery Workflow
 
-Coordinates the complete affiliate intelligence workflow.
+Coordinates the affiliate discovery pipeline.
 """
-
-from __future__ import annotations
 
 from app.database.session import SessionLocal
 from app.intelligence.scoring import AffiliateScoringEngine
@@ -12,9 +10,7 @@ from app.services.product_intelligence_service import (
     ProductIntelligenceService,
 )
 from app.services.research_pipeline import ResearchPipeline
-from app.workflows.core.workflow_result import (
-    WorkflowResult,
-)
+from app.workflows.core.workflow_result import WorkflowResult
 
 
 class AffiliateDiscoveryWorkflow:
@@ -23,37 +19,45 @@ class AffiliateDiscoveryWorkflow:
     """
 
     def __init__(self):
-
         self.pipeline = ResearchPipeline()
         self.scoring = AffiliateScoringEngine()
 
-    def execute(
-        self,
-        url: str,
-    ) -> WorkflowResult:
+    def execute(self, payload: dict) -> WorkflowResult:
+        """
+        Execute the affiliate discovery workflow.
 
-        # --------------------------
-        # Research
-        # --------------------------
+        Expected payload:
+        {
+            "url": "https://example.com"
+        }
+        """
+
+        url = payload.get("url")
+
+        if not url:
+            raise ValueError("Payload must contain a 'url'.")
+
+        # -------------------------------
+        # Run research pipeline
+        # -------------------------------
 
         analysis = self.pipeline.analyze(url)
 
-        # --------------------------
-        # Intelligence
-        # --------------------------
+        # -------------------------------
+        # Score the analysis
+        # (ResearchPipeline already returns
+        # an AffiliateAnalysis object)
+        # -------------------------------
 
-        intelligence = self.scoring.score(
-            analysis
-        )
+        intelligence = self.scoring.score(analysis)
 
-        # --------------------------
-        # Persistence
-        # --------------------------
+        # -------------------------------
+        # Save to database
+        # -------------------------------
 
         db = SessionLocal()
 
         try:
-
             service = ProductIntelligenceService(db)
 
             database = service.save_analysis(
@@ -62,18 +66,17 @@ class AffiliateDiscoveryWorkflow:
             )
 
         finally:
-
             db.close()
 
-        # --------------------------
-        # Result
-        # --------------------------
+        # -------------------------------
+        # Return workflow result
+        # -------------------------------
 
         return WorkflowResult(
             analysis=analysis,
             intelligence=intelligence,
             database=database,
             metadata={
-                "workflow": "AffiliateDiscoveryWorkflow",
+                "workflow": "AffiliateDiscoveryWorkflow"
             },
         )
