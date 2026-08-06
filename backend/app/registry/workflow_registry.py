@@ -1,22 +1,31 @@
-from app.workflows.affiliate.affiliate_discovery_workflow import (
-    AffiliateDiscoveryWorkflow,
-)
+"""
+Workflow Registry
+
+Central registry for available workflows.
+"""
 
 
 class WorkflowRegistry:
+
     def __init__(self):
-        self._workflows = {
-            "affiliate_discovery": AffiliateDiscoveryWorkflow(),
-        }
 
-    def get(self, workflow_name: str):
-        if workflow_name not in self._workflows:
-            raise ValueError(f"Workflow '{workflow_name}' is not registered.")
+        self._workflows = {}
 
-        return self._workflows[workflow_name]
 
-    def register(self, name: str, workflow):
+    def register(
+        self,
+        name: str,
+        workflow,
+    ):
+
         self._workflows[name] = workflow
 
-    def list(self):
-        return list(self._workflows.keys())
+
+    def get(self, name: str):
+
+        return self._workflows.get(name)
+
+
+    def all(self):
+
+        return self._workflows
