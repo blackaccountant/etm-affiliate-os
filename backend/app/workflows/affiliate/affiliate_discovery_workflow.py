@@ -1,63 +1,76 @@
-"""
-Affiliate Discovery Workflow
+from time import perf_counter
 
-Coordinates the affiliate discovery pipeline.
-"""
-
-from app.database.session import SessionLocal
-from app.intelligence.scoring import AffiliateScoringEngine
-from app.services.product_intelligence_service import (
-    ProductIntelligenceService,
-)
+from app.workflow_engine.workflow_result import WorkflowResult
 from app.services.research_pipeline import ResearchPipeline
-from app.workflows.core.workflow_result import WorkflowResult
+from app.services.product_intelligence_service import ProductIntelligenceService
+from app.intelligence.scoring import AffiliateScoringEngine
+from app.database.session import SessionLocal
 
 
 class AffiliateDiscoveryWorkflow:
     """
-    Complete affiliate discovery workflow.
+    Complete Affiliate Discovery Workflow
+
+    Flow:
+
+        URL
+          ↓
+    Research Pipeline
+          ↓
+    Affiliate Analysis
+          ↓
+    Intelligence Scoring
+          ↓
+    Database Save
+          ↓
+    WorkflowResult
     """
 
     def __init__(self):
+
         self.pipeline = ResearchPipeline()
-        self.scoring = AffiliateScoringEngine()
+        self.scorer = AffiliateScoringEngine()
 
-    def execute(self, payload: dict) -> WorkflowResult:
-        """
-        Execute the affiliate discovery workflow.
+    def execute(self, payload: dict):
 
-        Expected payload:
-        {
-            "url": "https://example.com"
-        }
-        """
-
-        url = payload.get("url")
-
-        if not url:
-            raise ValueError("Payload must contain a 'url'.")
-
-        # -------------------------------
-        # Run research pipeline
-        # -------------------------------
-
-        analysis = self.pipeline.analyze(url)
-
-        # -------------------------------
-        # Score the analysis
-        # (ResearchPipeline already returns
-        # an AffiliateAnalysis object)
-        # -------------------------------
-
-        intelligence = self.scoring.score(analysis)
-
-        # -------------------------------
-        # Save to database
-        # -------------------------------
+        start = perf_counter()
 
         db = SessionLocal()
 
+        events = [
+            "WorkflowStarted"
+        ]
+
         try:
+
+            url = payload.get("url")
+
+            # --------------------------------------------------
+            # Step 1 - AI Research
+            # --------------------------------------------------
+
+            analysis = self.pipeline.analyze(url)
+
+            events.append(
+                "AnalysisCompleted"
+            )
+
+            # --------------------------------------------------
+            # Step 2 - Intelligence Scoring
+            # --------------------------------------------------
+
+            intelligence = self.scorer.score(
+                analysis
+            )
+
+            events.append(
+                "ScoringCompleted"
+            )
+
+            # --------------------------------------------------
+            # Step 3 - Save to Database
+            # --------------------------------------------------
+
             service = ProductIntelligenceService(db)
 
             database = service.save_analysis(
@@ -65,18 +78,48 @@ class AffiliateDiscoveryWorkflow:
                 intelligence,
             )
 
+            events.append(
+                "DatabaseSaved"
+            )
+
+            duration = perf_counter() - start
+
+            events.append(
+                "WorkflowCompleted"
+            )
+
+            return WorkflowResult(
+                success=True,
+                workflow="affiliate_discovery",
+                data={
+                    "analysis": analysis,
+                    "intelligence": intelligence,
+                    "database": database,
+                },
+                events=events,
+                errors=[],
+                duration=duration,
+            )
+
+        except Exception as exc:
+
+            duration = perf_counter() - start
+
+            events.append(
+                "WorkflowFailed"
+            )
+
+            return WorkflowResult(
+                success=False,
+                workflow="affiliate_discovery",
+                data={},
+                events=events,
+                errors=[
+                    str(exc)
+                ],
+                duration=duration,
+            )
+
         finally:
+
             db.close()
-
-        # -------------------------------
-        # Return workflow result
-        # -------------------------------
-
-        return WorkflowResult(
-            analysis=analysis,
-            intelligence=intelligence,
-            database=database,
-            metadata={
-                "workflow": "AffiliateDiscoveryWorkflow"
-            },
-        )
