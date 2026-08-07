@@ -12,10 +12,15 @@ from app.mission.result_registry import ResultRegistry
 from app.scheduler.scheduler import Scheduler
 from app.executor.executor import TaskExecutor
 
+from app.workforce.manager import WorkforceManager
+
 
 class MissionManager:
 
-    def __init__(self):
+    def __init__(
+        self,
+        workforce=None,
+    ):
 
         self.registry = MissionRegistry()
 
@@ -24,6 +29,12 @@ class MissionManager:
         self.scheduler = Scheduler()
 
         self.executor = TaskExecutor()
+
+        self.workforce = (
+            workforce
+            if workforce is not None
+            else WorkforceManager()
+        )
 
 
     def create_mission(
@@ -46,7 +57,10 @@ class MissionManager:
         return mission
 
 
-    def execute(self, mission):
+    def execute(
+        self,
+        mission,
+    ):
 
         task = self.scheduler.schedule(
             workflow_name=mission.workflow,
@@ -66,12 +80,48 @@ class MissionManager:
         return result
 
 
+    def launch(
+        self,
+        name,
+        objective,
+        workflow,
+        metadata=None,
+    ):
+
+        mission = self.create_mission(
+            name=name,
+            objective=objective,
+            workflow=workflow,
+            metadata=metadata,
+        )
+
+        worker = self.workforce.assign(
+            mission.name
+        )
+
+        result = self.execute(
+            mission
+        )
+
+        return {
+
+            "mission": mission,
+
+            "worker": worker,
+
+            "result": result,
+
+        }
+
+
     def get_mission(
         self,
         mission_id,
     ):
 
-        return self.registry.get(mission_id)
+        return self.registry.get(
+            mission_id
+        )
 
 
     def get_results(

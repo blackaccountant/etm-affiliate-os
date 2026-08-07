@@ -1,129 +1,347 @@
-const API="http://127.0.0.1:8000/system";
+/*
+    ETM Affiliate OS
+    Mission Control Frontend
 
-async function fetchJSON(endpoint){
+    Connects dashboard UI
+    with FastAPI backend.
+*/
 
-    const response=await fetch(API+endpoint);
 
-    return await response.json();
+const API_URL = "http://127.0.0.1:8000";
 
-}
 
-async function refresh(){
 
-    const status=await fetchJSON("/status");
+async function api(endpoint) {
 
-    document.getElementById("status").innerHTML=
+    try {
 
-    `<strong>${status.status}</strong>`;
+        const response = await fetch(
+            `${API_URL}${endpoint}`
+        );
 
-    const workers=await fetchJSON("/workers");
-
-    document.getElementById("workers").innerHTML=
-
-    workers.map(worker=>
-
-    `<div class="worker">
-
-    <span>${worker.name}</span>
-
-    <span class="online">
-
-    ${worker.status}
-
-    </span>
-
-    </div>`
-
-    ).join("");
-
-    const queue=await fetchJSON("/queue");
-
-    document.getElementById("queue").textContent=
-
-    JSON.stringify(queue,null,2);
-
-    const memory=await fetchJSON("/memory");
-
-    document.getElementById("memory").innerText=
-
-    memory.items;
-
-    const events=await fetchJSON("/events");
-
-    document.getElementById("events").innerHTML=
-
-    events.map(event=>
-
-    `<li>${event.event}</li>`
-
-    ).join("");
-
-    const executions=await fetchJSON("/executions");
-
-    document.getElementById("executions").innerHTML=
-
-    executions.map(execution=>
-
-    `<li>
-
-    ${execution.workflow}
-
-    -
-
-    ${execution.status}
-
-    </li>`
-
-    ).join("");
-
-    document.getElementById("last-update").innerText=
-
-    "Updated: "+new Date().toLocaleTimeString();
-
-}
-
-document.getElementById(
-
-"run-affiliate"
-
-).onclick=async()=>{
-
-    const response=
-
-    await fetch(
-
-    API+"/command/run-affiliate",
-
-    {
-
-        method:"POST"
+        return await response.json();
 
     }
 
+    catch(error) {
+
+        console.error(
+            "API Error:",
+            error
+        );
+
+        return null;
+
+    }
+
+}
+
+
+
+
+
+function setText(
+    id,
+    value
+){
+
+    const element =
+        document.getElementById(id);
+
+
+    if(element){
+
+        element.innerText = value;
+
+    }
+
+}
+
+
+
+
+
+async function loadSystem(){
+
+    const data =
+        await api(
+            "/system/status"
+        );
+
+
+    if(!data) return;
+
+
+    setText(
+        "system-status",
+        "🟢 ONLINE"
     );
 
-    const result=
+}
 
-    await response.json();
 
-    document.getElementById(
 
-    "command-status"
 
-    ).innerText=
 
-    result.message;
+async function loadWorkers(){
 
-    refresh();
+    const container =
+        document.getElementById(
+            "workers"
+        );
 
-};
 
-refresh();
+    const data =
+        await api(
+            "/system/workers"
+        );
 
-setInterval(
 
-refresh,
+    if(!container || !data)
+        return;
 
-3000
 
+    container.innerHTML = "";
+
+
+    if(data.length === 0){
+
+        container.innerHTML =
+            "No workers registered.";
+
+        return;
+
+    }
+
+
+    data.forEach(worker => {
+
+
+        const item =
+            document.createElement(
+                "div"
+            );
+
+
+        item.innerHTML = `
+
+            <strong>
+                ${worker.name}
+            </strong>
+
+            <br>
+
+            Status:
+            ${worker.status}
+
+            <br>
+
+            Missions:
+            ${worker.missions_completed}
+
+        `;
+
+
+        container.appendChild(
+            item
+        );
+
+
+    });
+
+}
+
+
+
+
+
+async function loadEvents(){
+
+    const container =
+        document.getElementById(
+            "events"
+        );
+
+
+    const data =
+        await api(
+            "/system/events"
+        );
+
+
+    if(!container || !data)
+        return;
+
+
+    container.innerHTML = "";
+
+
+    data.slice(-10)
+    .reverse()
+    .forEach(event => {
+
+
+        const item =
+            document.createElement(
+                "div"
+            );
+
+
+        item.innerText =
+            "• " + event.event;
+
+
+        container.appendChild(
+            item
+        );
+
+
+    });
+
+}
+
+
+
+
+
+async function loadExecutions(){
+
+    const data =
+        await api(
+            "/system/executions"
+        );
+
+
+    if(!data)
+        return;
+
+
+    setText(
+        "mission-count",
+        data.length
+    );
+
+
+}
+
+
+
+
+
+async function loadQueue(){
+
+    const data =
+        await api(
+            "/system/queue"
+        );
+
+
+    if(!data)
+        return;
+
+
+    setText(
+        "worker-count",
+        data.completed || 0
+    );
+
+
+}
+
+
+
+
+
+async function launchAffiliate(){
+
+    const button =
+        document.getElementById(
+            "run-affiliate"
+        );
+
+
+    if(button){
+
+        button.innerText =
+            "Launching...";
+
+        button.disabled = true;
+
+    }
+
+
+    await fetch(
+        `${API_URL}/system/command/run-affiliate`,
+        {
+            method:"POST"
+        }
+    );
+
+
+    await refresh();
+
+
+    if(button){
+
+        button.innerText =
+            "▶ Launch Affiliate Discovery";
+
+        button.disabled = false;
+
+    }
+
+
+}
+
+
+
+
+
+async function refresh(){
+
+    await loadSystem();
+
+    await loadWorkers();
+
+    await loadEvents();
+
+    await loadExecutions();
+
+    await loadQueue();
+
+}
+
+
+
+
+
+document.addEventListener(
+    "DOMContentLoaded",
+    ()=>{
+
+
+        const button =
+            document.getElementById(
+                "run-affiliate"
+            );
+
+
+        if(button){
+
+            button.onclick =
+                launchAffiliate;
+
+        }
+
+
+        refresh();
+
+
+        setInterval(
+            refresh,
+            5000
+        );
+
+
+    }
 );

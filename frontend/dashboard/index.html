@@ -3,73 +3,138 @@
 
 <head>
 
-<meta charset="UTF-8">
+    <meta charset="UTF-8">
 
-<meta name="viewport"
-content="width=device-width, initial-scale=1">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
 
-<title>ETM Affiliate OS</title>
+    <title>ETM Affiliate OS</title>
 
-<link rel="stylesheet"
-href="styles.css">
+    <link rel="stylesheet" href="styles.css">
 
 </head>
 
 <body>
 
-<div class="container">
+    <header class="topbar">
 
-<h1>ETM Affiliate OS</h1>
+        <div>
 
-<h2>Mission Control</h2>
+            <h1>ETM Affiliate OS</h1>
 
-<p id="last-update">
-Loading...
-</p>
+            <p>AI Workforce Mission Control</p>
 
-<button id="run-affiliate">
-▶ Run Affiliate Discovery
-</button>
+        </div>
 
-<p id="command-status"></p>
+        <div class="system-status">
 
-<div class="grid">
+            <span id="system-status">
+                🟢 ONLINE
+            </span>
 
-<div class="card">
-<h3>System</h3>
-<p id="status"></p>
-</div>
+        </div>
 
-<div class="card">
-<h3>Workers</h3>
-<div id="workers"></div>
-</div>
+    </header>
 
-<div class="card">
-<h3>Queue</h3>
-<pre id="queue"></pre>
-</div>
+    <main>
 
-<div class="card">
-<h3>Memory</h3>
-<p id="memory"></p>
-</div>
+        <section class="stats">
 
-<div class="card">
-<h3>Events</h3>
-<ul id="events"></ul>
-</div>
+            <div class="card stat-card">
 
-<div class="card">
-<h3>Executions</h3>
-<ul id="executions"></ul>
-</div>
+                <h3>Revenue Today</h3>
 
-</div>
+                <h2 id="revenue-today">$0.00</h2>
 
-</div>
+            </div>
 
-<script src="app.js"></script>
+            <div class="card stat-card">
+
+                <h3>Workers</h3>
+
+                <h2 id="worker-count">0</h2>
+
+            </div>
+
+            <div class="card stat-card">
+
+                <h3>Running Missions</h3>
+
+                <h2 id="mission-count">0</h2>
+
+            </div>
+
+            <div class="card stat-card">
+
+                <h3>Success Rate</h3>
+
+                <h2 id="success-rate">100%</h2>
+
+            </div>
+
+        </section>
+
+        <section class="dashboard-grid">
+
+            <div class="card">
+
+                <h2>AI Workforce</h2>
+
+                <div id="workers">
+
+                    Loading...
+
+                </div>
+
+            </div>
+
+            <div class="card">
+
+                <h2>Active Mission</h2>
+
+                <div id="active-mission">
+
+                    No active mission.
+
+                </div>
+
+                <button id="run-affiliate">
+
+                    ▶ Launch Affiliate Discovery
+
+                </button>
+
+            </div>
+
+            <div class="card">
+
+                <h2>Latest Results</h2>
+
+                <div id="latest-results">
+
+                    No results yet.
+
+                </div>
+
+            </div>
+
+            <div class="card">
+
+                <h2>Live Events</h2>
+
+                <div id="events">
+
+                    Waiting...
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <script src="app.js"></script>
 
 </body>
 

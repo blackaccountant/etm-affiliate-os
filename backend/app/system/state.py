@@ -5,7 +5,6 @@ Central storage for Mission Control
 runtime information.
 """
 
-
 from app.system.history import ExecutionHistory
 from app.system.event_monitor import EventMonitor
 
@@ -18,12 +17,11 @@ class SystemState:
 
         self.events = EventMonitor()
 
-
     def record_execution(
         self,
         workflow: str,
         status: str,
-        duration: float
+        duration: float,
     ):
 
         self.history.add(
@@ -34,21 +32,18 @@ class SystemState:
             }
         )
 
-
     def record_event(
         self,
-        event: str
+        event: str,
     ):
 
         self.events.publish(
             event
         )
 
-
     def executions(self):
 
         return self.history.all()
-
 
     def events_list(self):
 
