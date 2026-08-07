@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1">
+
+<title>ETM Affiliate OS</title>
+
+<link rel="stylesheet"
+href="styles.css">
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>ETM Affiliate OS</h1>
+
+<h2>Mission Control</h2>
+
+<p id="last-update">
+Loading...
+</p>
+
+<button id="run-affiliate">
+▶ Run Affiliate Discovery
+</button>
+
+<p id="command-status"></p>
+
+<div class="grid">
+
+<div class="card">
+<h3>System</h3>
+<p id="status"></p>
+</div>
+
+<div class="card">
+<h3>Workers</h3>
+<div id="workers"></div>
+</div>
+
+<div class="card">
+<h3>Queue</h3>
+<pre id="queue"></pre>
+</div>
+
+<div class="card">
+<h3>Memory</h3>
+<p id="memory"></p>
+</div>
+
+<div class="card">
+<h3>Events</h3>
+<ul id="events"></ul>
+</div>
+
+<div class="card">
+<h3>Executions</h3>
+<ul id="executions"></ul>
+</div>
+
+</div>
+
+</div>
+
+<script src="app.js"></script>
+
+</body>
+
+</html>
