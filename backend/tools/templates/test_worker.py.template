@@ -1,0 +1,18 @@
+"""
+Generated Worker Test
+"""
+
+
+from app.ai.workers.{module} import {class_name}Worker
+
+
+
+def test_worker_creation():
+
+    worker = {class_name}Worker()
+
+    assert (
+        worker.name
+        ==
+        "{name}"
+    )
