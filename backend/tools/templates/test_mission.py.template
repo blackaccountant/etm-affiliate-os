@@ -1,0 +1,19 @@
+"""
+Generated Mission Test
+"""
+
+
+from app.mission.{module} import {class_name}Mission
+
+
+
+def test_mission_creation():
+
+    mission = {class_name}Mission()
+
+
+    assert (
+        mission.name
+        ==
+        "{name}"
+    )
