@@ -9,6 +9,7 @@ from fastapi import APIRouter
 
 from app.system.intelligence import SystemIntelligence
 from app.system.runtime import RuntimeAdapter
+from app.system.dashboard import DashboardService
 
 from app.scheduler.scheduler import Scheduler
 
@@ -37,6 +38,8 @@ router = APIRouter(
 brain = SystemIntelligence()
 
 runtime = RuntimeAdapter()
+
+dashboard = DashboardService(runtime)
 
 scheduler = Scheduler()
 
@@ -161,6 +164,18 @@ def executions():
         ExecutionStatus(**item)
         for item in runtime.get_history()
     ]
+
+
+# --------------------------------------------------
+# Dashboard
+# --------------------------------------------------
+
+@router.get(
+    "/dashboard",
+)
+def dashboard_summary():
+
+    return dashboard.summary()
 
 
 # --------------------------------------------------
