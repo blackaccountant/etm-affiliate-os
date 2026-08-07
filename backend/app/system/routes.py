@@ -40,7 +40,9 @@ runtime = RuntimeAdapter()
 
 scheduler = Scheduler()
 
-executor = TaskExecutor()
+executor = TaskExecutor(
+    runtime=runtime
+)
 
 
 # --------------------------------------------------

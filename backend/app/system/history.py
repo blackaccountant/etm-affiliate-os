@@ -1,9 +1,11 @@
 """
 Execution History
 
-Stores execution history for
+Stores workflow execution history for
 Mission Control.
 """
+
+from datetime import datetime
 
 
 class ExecutionHistory:
@@ -15,16 +17,16 @@ class ExecutionHistory:
 
     def add(self, execution: dict):
 
-        self._history.append(
-            execution
-        )
+        execution = execution.copy()
+
+        execution["timestamp"] = datetime.now().isoformat()
+
+        self._history.append(execution)
 
 
     def all(self):
 
-        return list(
-            self._history
-        )
+        return self._history
 
 
     def latest(self):
@@ -36,13 +38,23 @@ class ExecutionHistory:
         return self._history[-1]
 
 
-    def count(self):
-
-        return len(
-            self._history
-        )
-
-
     def clear(self):
 
         self._history.clear()
+
+
+    def update_status(
+        self,
+        workflow: str,
+        status: str,
+    ):
+
+        for item in reversed(self._history):
+
+            if item["workflow"] == workflow:
+
+                item["status"] = status
+
+                return item
+
+        return None

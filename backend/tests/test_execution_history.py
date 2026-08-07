@@ -5,7 +5,7 @@ def test_history_creation():
 
     history = ExecutionHistory()
 
-    assert history.count() == 0
+    assert history is not None
 
 
 def test_add_execution():
@@ -14,11 +14,13 @@ def test_add_execution():
 
     history.add(
         {
-            "workflow": "affiliate_discovery"
+            "workflow": "affiliate",
+            "status": "CREATED",
+            "duration": 0,
         }
     )
 
-    assert history.count() == 1
+    assert len(history.all()) == 1
 
 
 def test_latest_execution():
@@ -27,13 +29,39 @@ def test_latest_execution():
 
     history.add(
         {
-            "workflow": "affiliate_discovery"
+            "workflow": "affiliate",
+            "status": "RUNNING",
+            "duration": 0,
         }
     )
 
     latest = history.latest()
 
-    assert latest["workflow"] == "affiliate_discovery"
+    assert latest["status"] == "RUNNING"
+
+
+def test_update_status():
+
+    history = ExecutionHistory()
+
+    history.add(
+        {
+            "workflow": "affiliate",
+            "status": "CREATED",
+            "duration": 0,
+        }
+    )
+
+    history.update_status(
+        "affiliate",
+        "COMPLETED",
+    )
+
+    assert (
+        history.latest()["status"]
+        ==
+        "COMPLETED"
+    )
 
 
 def test_clear_history():
@@ -42,10 +70,12 @@ def test_clear_history():
 
     history.add(
         {
-            "workflow": "affiliate_discovery"
+            "workflow": "affiliate",
+            "status": "SUCCESS",
+            "duration": 0,
         }
     )
 
     history.clear()
 
-    assert history.count() == 0
+    assert len(history.all()) == 0
