@@ -5,7 +5,7 @@ Response models for ETM Affiliate OS
 Mission Control API.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SystemStatus(BaseModel):
@@ -48,6 +48,11 @@ class MemoryStatus(BaseModel):
 class EventStatus(BaseModel):
 
     event: str
+    type: str = "INFO"
+    timestamp: str | None = None
+    metadata: dict = Field(
+        default_factory=dict
+    )
 
 
 class ExecutionStatus(BaseModel):
@@ -55,6 +60,7 @@ class ExecutionStatus(BaseModel):
     workflow: str
     status: str
     duration: float
+    timestamp: str | None = None
 
 
 class RunWorkflowRequest(BaseModel):
@@ -69,7 +75,13 @@ class RunWorkflowResponse(BaseModel):
     status: str
     workflow: str
 
+
 class CommandResponse(BaseModel):
 
     success: bool
     message: str
+
+
+class ProductDiscoveryRequest(BaseModel):
+
+    url: str | None = None

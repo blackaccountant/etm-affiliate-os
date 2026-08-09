@@ -5,14 +5,20 @@
 
     <meta charset="UTF-8">
 
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>ETM Affiliate OS</title>
 
-    <link rel="stylesheet" href="styles.css">
+    <link
+        rel="stylesheet"
+        href="styles.css"
+    >
 
 </head>
+
 
 <body>
 
@@ -20,11 +26,16 @@
 
         <div>
 
-            <h1>ETM Affiliate OS</h1>
+            <h1>
+                ETM Affiliate OS
+            </h1>
 
-            <p>AI Workforce Mission Control</p>
+            <p>
+                AI Workforce Mission Control
+            </p>
 
         </div>
+
 
         <div class="system-status">
 
@@ -36,49 +47,82 @@
 
     </header>
 
+
     <main>
+
+        <!-- ========================================= -->
+        <!-- SYSTEM STATS -->
+        <!-- ========================================= -->
 
         <section class="stats">
 
             <div class="card stat-card">
 
-                <h3>Revenue Today</h3>
+                <h3>
+                    Revenue Today
+                </h3>
 
-                <h2 id="revenue-today">$0.00</h2>
-
-            </div>
-
-            <div class="card stat-card">
-
-                <h3>Workers</h3>
-
-                <h2 id="worker-count">0</h2>
+                <h2 id="revenue-today">
+                    $0.00
+                </h2>
 
             </div>
 
+
             <div class="card stat-card">
 
-                <h3>Running Missions</h3>
+                <h3>
+                    Workers
+                </h3>
 
-                <h2 id="mission-count">0</h2>
+                <h2 id="worker-count">
+                    0
+                </h2>
 
             </div>
 
+
             <div class="card stat-card">
 
-                <h3>Success Rate</h3>
+                <h3>
+                    Running Missions
+                </h3>
 
-                <h2 id="success-rate">100%</h2>
+                <h2 id="mission-count">
+                    0
+                </h2>
+
+            </div>
+
+
+            <div class="card stat-card">
+
+                <h3>
+                    Success Rate
+                </h3>
+
+                <h2 id="success-rate">
+                    100%
+                </h2>
 
             </div>
 
         </section>
 
+
+
+        <!-- ========================================= -->
+        <!-- WORKFORCE + ACTIVE MISSION -->
+        <!-- ========================================= -->
+
         <section class="dashboard-grid">
+
 
             <div class="card">
 
-                <h2>AI Workforce</h2>
+                <h2>
+                    AI Workforce
+                </h2>
 
                 <div id="workers">
 
@@ -88,9 +132,13 @@
 
             </div>
 
+
+
             <div class="card">
 
-                <h2>Active Mission</h2>
+                <h2>
+                    Active Mission
+                </h2>
 
                 <div id="active-mission">
 
@@ -98,17 +146,41 @@
 
                 </div>
 
-                <button id="run-affiliate">
 
-                    ▶ Launch Affiliate Discovery
+                <div class="mission-actions">
 
-                </button>
+                    <button
+                        id="run-product-discovery"
+                    >
+
+                        ▶ Launch Product Discovery
+
+                    </button>
+
+
+                    <button
+                        id="run-affiliate"
+                    >
+
+                        ▶ Launch Affiliate Discovery
+
+                    </button>
+
+                </div>
 
             </div>
 
-            <div class="card">
 
-                <h2>Latest Results</h2>
+
+            <!-- ===================================== -->
+            <!-- LATEST RESULTS -->
+            <!-- ===================================== -->
+
+            <div class="card latest-results-card">
+
+                <h2>
+                    Latest Results
+                </h2>
 
                 <div id="latest-results">
 
@@ -118,9 +190,17 @@
 
             </div>
 
+
+
+            <!-- ===================================== -->
+            <!-- LIVE EVENTS -->
+            <!-- ===================================== -->
+
             <div class="card">
 
-                <h2>Live Events</h2>
+                <h2>
+                    Live Events
+                </h2>
 
                 <div id="events">
 
@@ -130,9 +210,11 @@
 
             </div>
 
+
         </section>
 
     </main>
+
 
     <script src="app.js"></script>
 

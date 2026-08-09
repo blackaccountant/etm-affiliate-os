@@ -28,17 +28,80 @@ class DashboardService:
 
         memory = self.runtime.get_memory_count()
 
+        latest_mission_result = (
+            self.runtime.get_latest_mission_result()
+        )
 
-        running = [
+
+        # -----------------------------------------
+        # Execution Metrics
+        # -----------------------------------------
+
+        successful_executions = [
 
             execution
 
             for execution in executions
 
-            if execution.get("status") == "RUNNING"
+            if execution.get("status")
+            in (
+                "SUCCESS",
+                "COMPLETED",
+            )
 
         ]
 
+
+        failed_executions = [
+
+            execution
+
+            for execution in executions
+
+            if execution.get("status")
+            == "FAILED"
+
+        ]
+
+
+        running_executions = [
+
+            execution
+
+            for execution in executions
+
+            if execution.get("status")
+            == "RUNNING"
+
+        ]
+
+
+        terminal_executions = (
+            len(successful_executions)
+            +
+            len(failed_executions)
+        )
+
+
+        success_rate = (
+
+            (
+                len(successful_executions)
+                /
+                terminal_executions
+            )
+            * 100
+
+            if terminal_executions > 0
+
+            else 100.0
+
+        )
+
+
+        # -----------------------------------------
+        # Latest Execution
+        # -----------------------------------------
 
         latest_execution = (
 
@@ -51,6 +114,10 @@ class DashboardService:
         )
 
 
+        # -----------------------------------------
+        # Latest Event
+        # -----------------------------------------
+
         latest_event = (
 
             events[-1]
@@ -62,15 +129,40 @@ class DashboardService:
         )
 
 
+        # -----------------------------------------
+        # Dashboard Snapshot
+        # -----------------------------------------
+
         return {
 
             "status": "ONLINE",
 
             "workers": len(workers),
 
-            "running_missions": len(running),
+            "running_missions": len(
+                running_executions
+            ),
 
-            "completed_missions": len(executions),
+            "completed_missions": len(
+                successful_executions
+            ),
+
+            "total_executions": len(
+                executions
+            ),
+
+            "successful_executions": len(
+                successful_executions
+            ),
+
+            "failed_executions": len(
+                failed_executions
+            ),
+
+            "success_rate": round(
+                success_rate,
+                2,
+            ),
 
             "queue": queue,
 
@@ -81,6 +173,10 @@ class DashboardService:
             "latest_execution": latest_execution,
 
             "latest_event": latest_event,
+
+            "latest_mission_result": (
+                latest_mission_result
+            ),
 
             "worker_list": workers,
 

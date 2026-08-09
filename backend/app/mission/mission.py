@@ -5,18 +5,14 @@ Represents an AI operation
 managed by ETM Affiliate OS.
 """
 
-
 from datetime import datetime
 
 from uuid import uuid4
 
-
 from app.execution.status import ExecutionStatus
 
 
-
 class Mission:
-
 
     def __init__(
         self,
@@ -24,8 +20,8 @@ class Mission:
         objective: str,
         workflow: str,
         metadata: dict | None = None,
+        required_capability: str | None = None,
     ):
-
 
         self.id = str(uuid4())
 
@@ -35,12 +31,15 @@ class Mission:
 
         self.workflow = workflow
 
+        self.required_capability = (
+            required_capability
+        )
+
         self.status = ExecutionStatus.CREATED
 
         self.metadata = metadata or {}
 
         self.created_at = datetime.now()
-
 
 
     def update_status(
@@ -49,7 +48,6 @@ class Mission:
     ):
 
         self.status = status
-
 
 
     def to_dict(self):
@@ -64,10 +62,14 @@ class Mission:
 
             "workflow": self.workflow,
 
+            "required_capability":
+                self.required_capability,
+
             "status": self.status,
 
             "metadata": self.metadata,
 
-            "created_at": self.created_at.isoformat(),
+            "created_at":
+                self.created_at.isoformat(),
 
         }

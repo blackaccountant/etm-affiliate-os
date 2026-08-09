@@ -16,6 +16,10 @@ class WorkerInfo:
 
     worker_type: str
 
+    capabilities: list[str] = field(
+        default_factory=list
+    )
+
     status: str = "OFFLINE"
 
     current_mission: str | None = None
@@ -29,6 +33,10 @@ class WorkerInfo:
     )
 
 
+    # --------------------------------------------------
+    # Mission lifecycle
+    # --------------------------------------------------
+
     def start_mission(
         self,
         mission_name: str,
@@ -37,6 +45,7 @@ class WorkerInfo:
         self.status = "BUSY"
 
         self.current_mission = mission_name
+
 
 
     def finish_mission(
@@ -50,10 +59,42 @@ class WorkerInfo:
 
         self.missions_completed += 1
 
+
         if not success:
 
             self.success_rate *= 0.95
 
+
+
+    # --------------------------------------------------
+    # Capability matching
+    # --------------------------------------------------
+
+    def has_capability(
+        self,
+        capability: str,
+    ):
+
+        return capability in self.capabilities
+
+
+
+    def add_capability(
+        self,
+        capability: str,
+    ):
+
+        if capability not in self.capabilities:
+
+            self.capabilities.append(
+                capability
+            )
+
+
+
+    # --------------------------------------------------
+    # Serialization
+    # --------------------------------------------------
 
     def to_dict(self):
 
@@ -62,6 +103,8 @@ class WorkerInfo:
             "name": self.name,
 
             "worker_type": self.worker_type,
+
+            "capabilities": self.capabilities,
 
             "status": self.status,
 
