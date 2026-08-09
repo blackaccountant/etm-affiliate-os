@@ -13,20 +13,21 @@ from app.system.dashboard import DashboardService
 
 from app.scheduler.scheduler import Scheduler
 
-from app.executor.executor import TaskExecutor
-
 from app.system.models import (
-    SystemStatus,
-    SystemSummary,
-    WorkerStatus,
-    QueueStatus,
-    MemoryStatus,
-    EventStatus,
-    ExecutionStatus,
-    RunWorkflowRequest,
-    RunWorkflowResponse,
-    CommandResponse,
+SystemStatus,
+SystemSummary,
+WorkerStatus,
+QueueStatus,
+MemoryStatus,
+EventStatus,
+ExecutionStatus,
+RunWorkflowRequest,
+RunWorkflowResponse,
+CommandResponse,
+ProductDiscoveryRequest,
 )
+
+from app.mission.manager import MissionManager
 
 
 router = APIRouter(
@@ -35,22 +36,28 @@ router = APIRouter(
 )
 
 
+# ==================================================
+# Core Services
+# ==================================================
+
 brain = SystemIntelligence()
 
 runtime = RuntimeAdapter()
 
-dashboard = DashboardService(runtime)
+dashboard = DashboardService(
+    runtime
+)
 
 scheduler = Scheduler()
 
-executor = TaskExecutor(
+mission_manager = MissionManager(
     runtime=runtime
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # Status
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/status",
@@ -61,17 +68,24 @@ def status():
     data = brain.system_status()
 
     return SystemStatus(
-        status=data.get("status", "ONLINE"),
-        workers=1,
+        status=data.get(
+            "status",
+            "ONLINE",
+        ),
+        workers=len(
+            runtime.get_workers()
+        ),
         queue=runtime.get_queue_status()["pending"],
         memory=runtime.get_memory_count(),
-        events=len(runtime.get_events()),
+        events=len(
+            runtime.get_events()
+        ),
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # Summary
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/summary",
@@ -79,18 +93,37 @@ def status():
 )
 def summary():
 
+    history = runtime.get_history()
+
+    successful = sum(
+        1
+        for item in history
+        if item.get("status")
+        in {
+            "SUCCESS",
+            "COMPLETED",
+        }
+    )
+
+    failed = sum(
+        1
+        for item in history
+        if item.get("status")
+        == "FAILED"
+    )
+
     return SystemSummary(
         version="0.10.0",
         uptime="Running",
-        executions=len(runtime.get_history()),
-        successful=0,
-        failed=0,
+        executions=len(history),
+        successful=successful,
+        failed=failed,
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # Workers
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/workers",
@@ -104,9 +137,9 @@ def workers():
     ]
 
 
-# --------------------------------------------------
+# ==================================================
 # Queue
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/queue",
@@ -119,9 +152,9 @@ def queue():
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # Memory
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/memory",
@@ -134,9 +167,9 @@ def memory():
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # Events
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/events",
@@ -145,14 +178,14 @@ def memory():
 def events():
 
     return [
-        EventStatus(event=event)
-        for event in runtime.get_events()
+        EventStatus(**event)
+        for event in runtime.get_event_records()
     ]
 
 
-# --------------------------------------------------
+# ==================================================
 # Executions
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/executions",
@@ -166,9 +199,9 @@ def executions():
     ]
 
 
-# --------------------------------------------------
+# ==================================================
 # Dashboard
-# --------------------------------------------------
+# ==================================================
 
 @router.get(
     "/dashboard",
@@ -178,9 +211,9 @@ def dashboard_summary():
     return dashboard.summary()
 
 
-# --------------------------------------------------
-# Run Workflow
-# --------------------------------------------------
+# ==================================================
+# Generic Workflow Request
+# ==================================================
 
 @router.post(
     "/run",
@@ -191,7 +224,11 @@ def run_workflow(
 ):
 
     runtime.record_event(
-        f"Workflow Requested: {request.workflow}"
+        f"Workflow Requested: {request.workflow}",
+        event_type="INFO",
+        metadata={
+            "workflow": request.workflow,
+        },
     )
 
     runtime.record_execution(
@@ -209,9 +246,45 @@ def run_workflow(
     )
 
 
-# --------------------------------------------------
-# Command Center
-# --------------------------------------------------
+# ==================================================
+# Product Discovery
+# ==================================================
+
+@router.post(
+    "/command/run-product-discovery",
+    response_model=CommandResponse,
+)
+def run_product_discovery(
+    request: ProductDiscoveryRequest | None = None,
+):
+
+    metadata = {}
+
+    if request and request.url:
+        metadata["url"] = request.url
+
+    mission_manager.launch(
+        name="ProductDiscovery",
+        objective=(
+            "Discover profitable affiliate "
+            "product opportunities"
+        ),
+        workflow="product_discovery",
+        metadata=metadata,
+    )
+
+    return CommandResponse(
+        success=True,
+        message=(
+            "Product Discovery "
+            "executed successfully"
+        ),
+    )
+
+
+# ==================================================
+# Affiliate Discovery
+# ==================================================
 
 @router.post(
     "/command/run-affiliate",
@@ -219,46 +292,18 @@ def run_workflow(
 )
 def run_affiliate():
 
-    task = scheduler.schedule(
-        workflow_name="affiliate_discovery",
-        payload={
+    mission_manager.launch(
+        name="AffiliateDiscovery",
+        objective="Analyze affiliate opportunity",
+        workflow="affiliate_discovery",
+        metadata={
             "url": "https://openrouter.ai"
         },
     )
 
-
-    runtime.record_event(
-        "Affiliate Discovery Scheduled"
-    )
-
-
-    runtime.record_execution(
-        {
-            "workflow": "affiliate_discovery",
-            "status": "SCHEDULED",
-            "duration": 0.0,
-        }
-    )
-
-
-    result = executor.execute(task)
-
-
-    runtime.record_event(
-        "Affiliate Discovery Completed"
-    )
-
-
-    runtime.record_execution(
-        {
-            "workflow": "affiliate_discovery",
-            "status": "SUCCESS",
-            "duration": 0.0,
-        }
-    )
-
-
     return CommandResponse(
         success=True,
-        message="Workflow executed successfully",
+        message=(
+            "Workflow executed successfully"
+        ),
     )

@@ -10,7 +10,6 @@ def test_workflow_registry_exists():
     assert registry is not None
 
 
-
 def test_affiliate_workflow_registered():
 
     registry = create_workflow_registry()
@@ -21,6 +20,16 @@ def test_affiliate_workflow_registered():
 
     assert workflow is not None
 
+
+def test_product_discovery_workflow_registered():
+
+    registry = create_workflow_registry()
+
+    workflow = registry.get(
+        "product_discovery"
+    )
+
+    assert workflow is not None
 
 
 def test_unknown_workflow_returns_none():

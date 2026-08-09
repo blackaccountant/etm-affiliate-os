@@ -20,6 +20,7 @@ class MissionManager:
     def __init__(
         self,
         workforce=None,
+        runtime=None,
     ):
 
         self.registry = MissionRegistry()
@@ -28,7 +29,11 @@ class MissionManager:
 
         self.scheduler = Scheduler()
 
-        self.executor = TaskExecutor()
+        self.runtime = runtime
+
+        self.executor = TaskExecutor(
+            runtime=runtime
+        )
 
         self.workforce = (
             workforce
@@ -43,6 +48,7 @@ class MissionManager:
         objective,
         workflow,
         metadata=None,
+        required_capability=None,
     ):
 
         mission = Mission(
@@ -50,9 +56,12 @@ class MissionManager:
             objective=objective,
             workflow=workflow,
             metadata=metadata,
+            required_capability=required_capability,
         )
 
-        self.registry.add(mission)
+        self.registry.add(
+            mission
+        )
 
         return mission
 
@@ -60,6 +69,7 @@ class MissionManager:
     def execute(
         self,
         mission,
+        worker=None,
     ):
 
         task = self.scheduler.schedule(
@@ -67,17 +77,79 @@ class MissionManager:
             payload=mission.metadata,
         )
 
-        workflow_result = self.executor.execute(task)
+
+        if worker:
+
+            task.assign_worker(
+                worker
+            )
+
+
+        workflow_result = self.executor.execute(
+            task
+        )
+
+
+        # -----------------------------------------
+        # Determine real execution status
+        # -----------------------------------------
+
+        success = True
+        error = None
+
+
+        if hasattr(
+            workflow_result,
+            "success",
+        ):
+
+            success = workflow_result.success
+
+
+        if not success:
+
+            error = getattr(
+                workflow_result,
+                "error",
+                "Workflow execution failed.",
+            )
+
 
         result = MissionResult(
             mission_id=mission.id,
-            success=True,
+            success=success,
             data=workflow_result,
+            error=error,
         )
 
-        self.results.add(result)
+
+        self.results.add(
+            result
+        )
+
+
+        if self.runtime:
+
+            self.runtime.memory.store(
+                "latest_mission_result",
+                {
+                    "mission_id": mission.id,
+                    "mission": mission.name,
+                    "workflow": mission.workflow,
+                    "worker": (
+                        worker.name
+                        if worker
+                        else None
+                    ),
+                    "success": result.success,
+                    "data": workflow_result,
+                    "error": result.error,
+                },
+            )
+
 
         return result
+
 
 
     def launch(
@@ -86,22 +158,42 @@ class MissionManager:
         objective,
         workflow,
         metadata=None,
+        required_capability=None,
     ):
+
 
         mission = self.create_mission(
             name=name,
             objective=objective,
             workflow=workflow,
             metadata=metadata,
+            required_capability=required_capability,
         )
 
-        worker = self.workforce.assign(
-            mission.name
-        )
+
+        if mission.required_capability:
+
+            worker = (
+                self.workforce.assign_by_capability(
+                    mission.name,
+                    mission.required_capability,
+                )
+            )
+
+        else:
+
+            worker = (
+                self.workforce.assign(
+                    mission.name
+                )
+            )
+
 
         result = self.execute(
-            mission
+            mission,
+            worker=worker,
         )
+
 
         return {
 
@@ -112,6 +204,7 @@ class MissionManager:
             "result": result,
 
         }
+
 
 
     def get_mission(

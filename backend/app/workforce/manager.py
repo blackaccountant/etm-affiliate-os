@@ -11,20 +11,37 @@ from app.workforce.worker_info import WorkerInfo
 
 class WorkforceManager:
 
+
     def __init__(self):
 
         self.registry = WorkforceRegistry()
+
+
+
+    # --------------------------------------------------
+    # Registration
+    # --------------------------------------------------
 
     def register(
         self,
         worker: WorkerInfo,
     ):
 
-        return self.registry.register(worker)
+        return self.registry.register(
+            worker
+        )
+
+
 
     def workers(self):
 
         return self.registry.all()
+
+
+
+    # --------------------------------------------------
+    # Availability
+    # --------------------------------------------------
 
     def available_workers(self):
 
@@ -41,13 +58,20 @@ class WorkforceManager:
 
         ]
 
+
+
+    # --------------------------------------------------
+    # Legacy Assignment
+    # --------------------------------------------------
+
     def assign(
         self,
         mission_name: str,
     ):
         """
-        Assign the first available worker
-        to a mission.
+        Assign first available worker.
+
+        Kept for backward compatibility.
         """
 
         for worker in self.available_workers():
@@ -58,31 +82,74 @@ class WorkforceManager:
 
             return worker
 
+
         return None
+
+
+
+    # --------------------------------------------------
+    # Capability Assignment
+    # --------------------------------------------------
+
+    def assign_by_capability(
+        self,
+        mission_name: str,
+        capability: str,
+    ):
+        """
+        Assign the best available worker
+        matching a capability.
+        """
+
+        for worker in self.available_workers():
+
+            if worker.has_capability(
+                capability
+            ):
+
+                worker.start_mission(
+                    mission_name
+                )
+
+                return worker
+
+
+        return None
+
+
+
+    # --------------------------------------------------
+    # Worker Release
+    # --------------------------------------------------
 
     def release(
         self,
         worker_name: str,
         success: bool = True,
     ):
-        """
-        Release a worker after completing
-        a mission.
-        """
 
         worker = self.registry.get(
             worker_name
         )
 
+
         if worker is None:
 
             return None
+
 
         worker.finish_mission(
             success=success
         )
 
+
         return worker
+
+
+
+    # --------------------------------------------------
+    # Lookup
+    # --------------------------------------------------
 
     def get_worker(
         self,
@@ -92,6 +159,12 @@ class WorkforceManager:
         return self.registry.get(
             worker_name
         )
+
+
+
+    # --------------------------------------------------
+    # Status
+    # --------------------------------------------------
 
     def online_workers(self):
 
@@ -105,6 +178,8 @@ class WorkforceManager:
 
         ]
 
+
+
     def busy_workers(self):
 
         return [
@@ -117,6 +192,8 @@ class WorkforceManager:
 
         ]
 
+
+
     def offline_workers(self):
 
         return [
@@ -128,6 +205,12 @@ class WorkforceManager:
             if worker.status == "OFFLINE"
 
         ]
+
+
+
+    # --------------------------------------------------
+    # Summary
+    # --------------------------------------------------
 
     def summary(self):
 
@@ -150,6 +233,8 @@ class WorkforceManager:
             ),
 
         }
+
+
 
     def clear(self):
 

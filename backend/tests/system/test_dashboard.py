@@ -12,6 +12,7 @@ class FakeRuntime:
             }
         ]
 
+
     def get_history(self):
 
         return [
@@ -22,11 +23,13 @@ class FakeRuntime:
             }
         ]
 
+
     def get_events(self):
 
         return [
             "Affiliate Discovery Completed"
         ]
+
 
     def get_queue_status(self):
 
@@ -37,9 +40,15 @@ class FakeRuntime:
             "failed": 0,
         }
 
+
     def get_memory_count(self):
 
         return 0
+
+
+    def get_latest_mission_result(self):
+
+        return None
 
 
 def test_dashboard_summary():
@@ -48,15 +57,21 @@ def test_dashboard_summary():
         FakeRuntime()
     )
 
+
     data = service.summary()
+
 
     assert data["status"] == "ONLINE"
 
+
     assert data["workers"] == 1
+
 
     assert data["completed_missions"] == 1
 
+
     assert data["events"] == 1
+
 
     assert (
         data["latest_event"]
