@@ -6,6 +6,9 @@ from app.database.session import engine
 # Import every model that should become a table
 from app.models.product import Product
 from app.models.execution import Execution
+from app.models.product_intelligence_history import (
+    ProductIntelligenceHistory,
+)
 
 
 print("=" * 50)

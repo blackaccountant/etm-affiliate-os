@@ -16,6 +16,7 @@ from app.core.config import settings
 from app.exceptions.handlers import register_exception_handlers
 from app.logging.logger import get_logger
 from app.logging.logging_config import setup_logging
+from app.api.executions import router as execution_router
 
 
 # -----------------------------------------------------
@@ -116,4 +117,8 @@ app.include_router(
 
 app.include_router(
     system_router,
+)
+
+app.include_router(
+    execution_router
 )

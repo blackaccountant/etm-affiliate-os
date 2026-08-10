@@ -1,5 +1,33 @@
 from app.retry.retry_policy import RetryPolicy
 from app.task_queue.task import Task
+from datetime import datetime, timezone
+
+
+def test_retry_policy_calculates_delay():
+
+    policy = RetryPolicy(
+        max_attempts=3,
+        base_delay_seconds=30,
+    )
+
+    task = Task(
+        workflow_name="test",
+        payload={},
+    )
+
+
+    retry_time = (
+        policy.calculate_next_retry(
+            task
+        )
+    )
+
+
+    assert (
+        retry_time
+        >
+        datetime.now(timezone.utc)
+    )
 
 
 def test_retry_policy_allows_retry():

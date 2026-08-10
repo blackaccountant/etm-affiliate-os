@@ -8,6 +8,23 @@ from app.memory.memory_bus import MemoryBus
 from app.task_queue.queue import TaskQueue
 from app.system.history import ExecutionHistory
 from app.system.event_monitor import EventMonitor
+from app.workforce.manager import WorkforceManager
+
+from app.scheduler.scheduler import Scheduler
+
+from app.retry.retry_scanner import RetryScanner
+from app.retry.retry_worker import RetryWorker
+from app.retry.retry_manager import RetryManager
+
+from app.repositories.execution_repository import (
+    ExecutionRepository,
+)
+
+from app.services.execution_service import (
+    ExecutionService,
+)
+
+from app.database.session import SessionLocal
 
 
 class RuntimeAdapter:
@@ -21,6 +38,50 @@ class RuntimeAdapter:
         self.history = ExecutionHistory()
 
         self.events = EventMonitor()
+
+
+        self.workforce = WorkforceManager(
+            load_defaults=True
+        )
+
+
+        # -----------------------------
+        # Retry Infrastructure
+        # -----------------------------
+
+        self.scheduler = Scheduler()
+
+
+        db = SessionLocal()
+
+        execution_repository = (
+            ExecutionRepository(db)
+        )
+
+        execution_service = (
+            ExecutionService(
+                execution_repository
+            )
+        )
+
+
+        self.retry_scanner = RetryScanner(
+            execution_service,
+            self.scheduler,
+        )
+
+
+        self.retry_worker = RetryWorker(
+            self.scheduler,
+            None,
+        )
+
+
+        self.retry_manager = RetryManager(
+            self.retry_scanner,
+            self.retry_worker,
+        )
+
 
     # --------------------------------------------------
     # Memory
@@ -38,6 +99,7 @@ class RuntimeAdapter:
 
             return 0
 
+
     # --------------------------------------------------
     # Queue
     # --------------------------------------------------
@@ -51,6 +113,7 @@ class RuntimeAdapter:
             "failed": 0,
         }
 
+
     # --------------------------------------------------
     # Workers
     # --------------------------------------------------
@@ -58,11 +121,13 @@ class RuntimeAdapter:
     def get_workers(self):
 
         return [
-            {
-                "name": "Product Hunter",
-                "status": "ONLINE",
-            }
+
+            worker.to_dict()
+
+            for worker in self.workforce.workers()
+
         ]
+
 
     # --------------------------------------------------
     # Events
@@ -81,23 +146,26 @@ class RuntimeAdapter:
             metadata=metadata,
         )
 
+
     def get_events(self):
 
-        # Legacy string-based API
         return self.events.all()
+
 
     def get_event_records(self):
 
-        # Structured Mission Control API
         return self.events.records()
+
 
     def get_latest_event(self):
 
         return self.events.latest()
 
+
     def get_latest_event_record(self):
 
         return self.events.latest_record()
+
 
     # --------------------------------------------------
     # Execution History
@@ -112,6 +180,7 @@ class RuntimeAdapter:
             execution
         )
 
+
     def update_execution_status(
         self,
         workflow,
@@ -123,9 +192,11 @@ class RuntimeAdapter:
             status,
         )
 
+
     def get_history(self):
 
         return self.history.all()
+
 
     # --------------------------------------------------
     # Mission Results
@@ -136,3 +207,14 @@ class RuntimeAdapter:
         return self.memory.get(
             "latest_mission_result"
         )
+
+
+    # --------------------------------------------------
+    # Retry Recovery
+    # --------------------------------------------------
+
+    def recover_failed_tasks(
+        self,
+    ):
+
+        return self.retry_manager.process_once()

@@ -1,14 +1,15 @@
 """
 Task Executor
 
-Executes workflows and reports lifecycle
-updates to the shared runtime.
+Executes workflows and manages task lifecycle,
+including retry handling and failure recovery.
 """
 
 from time import perf_counter
 
 from app.workflow_engine.workflow_engine import WorkflowEngine
 from app.memory.memory_bus import MemoryBus
+from app.retry.retry_policy import RetryPolicy
 
 
 class TaskExecutor:
@@ -23,6 +24,45 @@ class TaskExecutor:
         self.memory = MemoryBus()
 
         self.runtime = runtime
+
+        self.workforce = None
+
+        self.retry_policy = RetryPolicy()
+
+
+        if runtime:
+
+            self.workforce = getattr(
+                runtime,
+                "workforce",
+                None,
+            )
+
+
+    # ==================================================
+    # Worker Completion
+    # ==================================================
+
+    def update_worker_status(
+        self,
+        worker_name,
+        success=True,
+    ):
+
+        if not self.workforce:
+
+            return
+
+
+        if not worker_name:
+
+            return
+
+
+        self.workforce.release(
+            worker_name,
+            success=success,
+        )
 
 
     # ==================================================
@@ -57,7 +97,7 @@ class TaskExecutor:
 
                 if hasattr(
                     task.worker,
-                    "name"
+                    "name",
                 )
 
                 else str(
@@ -66,10 +106,6 @@ class TaskExecutor:
 
             )
 
-
-        # --------------------------------------------------
-        # CREATED
-        # --------------------------------------------------
 
         if self.runtime:
 
@@ -84,10 +120,6 @@ class TaskExecutor:
 
 
         try:
-
-            # --------------------------------------------------
-            # RUNNING
-            # --------------------------------------------------
 
             if self.runtime:
 
@@ -107,10 +139,6 @@ class TaskExecutor:
                 )
 
 
-            # --------------------------------------------------
-            # Execute workflow
-            # --------------------------------------------------
-
             result = self.engine.run(
                 workflow_name=workflow_name,
                 payload=task.payload,
@@ -125,10 +153,6 @@ class TaskExecutor:
 
             task.mark_completed()
 
-
-            # --------------------------------------------------
-            # COMPLETED
-            # --------------------------------------------------
 
             if self.runtime:
 
@@ -149,9 +173,11 @@ class TaskExecutor:
                 )
 
 
-            # --------------------------------------------------
-            # Memory
-            # --------------------------------------------------
+            self.update_worker_status(
+                worker_name,
+                success=True,
+            )
+
 
             self.memory.store(
                 "last_execution",
@@ -176,12 +202,54 @@ class TaskExecutor:
             )
 
 
+            retrying = self.retry_policy.execute_retry(
+                task
+            )
+
+
+            # ==========================================
+            # Retry scheduled
+            # ==========================================
+
+            if retrying:
+
+
+                if self.runtime:
+
+                    self.runtime.record_event(
+                        f"{workflow_name} Retry Scheduled",
+                        event_type="RETRY",
+                        metadata={
+                            "workflow": workflow_name,
+                            "worker": worker_name,
+                            "retry_count": task.retry_count,
+                            "error": str(exc),
+                        },
+                    )
+
+
+                self.memory.store(
+                    "last_execution",
+                    {
+                        "workflow": workflow_name,
+                        "worker": worker_name,
+                        "status": "RETRYING",
+                        "retry_count": task.retry_count,
+                        "duration": duration,
+                        "error": str(exc),
+                    },
+                )
+
+
+                return None
+
+
+            # ==========================================
+            # Permanent failure
+            # ==========================================
+
             task.mark_failed()
 
-
-            # --------------------------------------------------
-            # FAILED
-            # --------------------------------------------------
 
             if self.runtime:
 
@@ -192,15 +260,22 @@ class TaskExecutor:
 
 
                 self.runtime.record_event(
-                    f"{workflow_name} Failed",
+                    f"{workflow_name} Failed Permanently",
                     event_type="ERROR",
                     metadata={
                         "workflow": workflow_name,
                         "worker": worker_name,
                         "duration": duration,
+                        "retry_count": task.retry_count,
                         "error": str(exc),
                     },
                 )
+
+
+            self.update_worker_status(
+                worker_name,
+                success=False,
+            )
 
 
             self.memory.store(
@@ -210,6 +285,7 @@ class TaskExecutor:
                     "worker": worker_name,
                     "status": "FAILED",
                     "duration": duration,
+                    "retry_count": task.retry_count,
                     "error": str(exc),
                 },
             )

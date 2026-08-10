@@ -13,7 +13,9 @@ from time import perf_counter
 
 from app.workflow_engine.workflow_result import WorkflowResult
 
-from app.workers.product_hunter_agent import ProductHunterAgent
+from app.workers.product_hunter_agent import (
+    ProductHunterAgent,
+)
 
 from app.workflows.affiliate.affiliate_discovery_workflow import (
     AffiliateDiscoveryWorkflow,
@@ -21,6 +23,7 @@ from app.workflows.affiliate.affiliate_discovery_workflow import (
 
 
 class ProductDiscoveryWorkflow:
+
 
     def __init__(self):
 
@@ -44,19 +47,24 @@ class ProductDiscoveryWorkflow:
 
         payload = payload or {}
 
+
         try:
 
             # ==================================================
             # REAL INTELLIGENCE MODE
             # ==================================================
 
-            url = payload.get("url")
+            url = payload.get(
+                "url"
+            )
+
 
             if url:
 
                 events.append(
                     "ResearchStarted"
                 )
+
 
                 result = (
                     self.affiliate_discovery.execute(
@@ -66,15 +74,18 @@ class ProductDiscoveryWorkflow:
                     )
                 )
 
+
                 events.append(
                     "ResearchCompleted"
                 )
+
 
                 if not result.success:
 
                     events.append(
                         "ProductDiscoveryFailed"
                     )
+
 
                     return WorkflowResult(
 
@@ -84,21 +95,18 @@ class ProductDiscoveryWorkflow:
 
                         data={},
 
-                        events=events
-                        + result.events,
+                        events=events + result.events,
 
                         errors=result.errors,
 
                         duration=(
                             perf_counter()
-                            - start
+                            -
+                            start
                         ),
+
                     )
 
-
-                # ------------------------------------------
-                # Normalize real intelligence result
-                # ------------------------------------------
 
                 intelligence_data = (
                     result.data
@@ -111,11 +119,20 @@ class ProductDiscoveryWorkflow:
                     )
                 )
 
+
                 intelligence = (
                     intelligence_data.get(
                         "intelligence"
                     )
                 )
+
+
+                decision = (
+                    intelligence_data.get(
+                        "decision"
+                    )
+                )
+
 
                 database = (
                     intelligence_data.get(
@@ -126,138 +143,158 @@ class ProductDiscoveryWorkflow:
 
                 product = {
 
+
                     "company": (
                         analysis.company
                         if hasattr(
                             analysis,
-                            "company"
+                            "company",
                         )
                         else None
                     ),
+
 
                     "website": (
                         analysis.website
                         if hasattr(
                             analysis,
-                            "website"
+                            "website",
                         )
                         else None
                     ),
+
 
                     "category": (
                         analysis.category
                         if hasattr(
                             analysis,
-                            "category"
+                            "category",
                         )
                         else None
                     ),
+
 
                     "summary": (
                         analysis.summary
                         if hasattr(
                             analysis,
-                            "summary"
+                            "summary",
                         )
                         else None
                     ),
+
 
                     "target_audience": (
                         analysis.target_audience
                         if hasattr(
                             analysis,
-                            "target_audience"
+                            "target_audience",
                         )
                         else []
                     ),
+
 
                     "pricing_model": (
                         analysis.pricing_model
                         if hasattr(
                             analysis,
-                            "pricing_model"
+                            "pricing_model",
                         )
                         else ""
                     ),
+
 
                     "affiliate_program_likely": (
                         analysis.affiliate_program_likely
                         if hasattr(
                             analysis,
-                            "affiliate_program_likely"
+                            "affiliate_program_likely",
                         )
                         else ""
                     ),
+
 
                     "commission_type": (
                         analysis.commission_type
                         if hasattr(
                             analysis,
-                            "commission_type"
+                            "commission_type",
                         )
                         else ""
                     ),
+
 
                     "commission_estimate": (
                         analysis.commission_estimate
                         if hasattr(
                             analysis,
-                            "commission_estimate"
+                            "commission_estimate",
                         )
                         else ""
                     ),
+
 
                     "affiliate_score": (
                         intelligence.score
                         if hasattr(
                             intelligence,
-                            "score"
+                            "score",
                         )
                         else 0
                     ),
+
 
                     "grade": (
                         intelligence.grade
                         if hasattr(
                             intelligence,
-                            "grade"
+                            "grade",
                         )
                         else ""
                     ),
+
 
                     "confidence": (
                         intelligence.confidence
                         if hasattr(
                             intelligence,
-                            "confidence"
+                            "confidence",
                         )
                         else 0
                     ),
+
 
                     "recommendation": (
                         intelligence.recommendation
                         if hasattr(
                             intelligence,
-                            "recommendation"
+                            "recommendation",
                         )
                         else ""
                     ),
+
+
+                    # NEW:
+                    # Decision Engine output
+                    "decision": decision,
+
 
                     "database": (
                         database.model_dump()
                         if hasattr(
                             database,
-                            "model_dump"
+                            "model_dump",
                         )
                         else (
                             database.__dict__
                             if hasattr(
                                 database,
-                                "__dict__"
+                                "__dict__",
                             )
                             else database
                         )
                     ),
+
                 }
 
 
@@ -265,9 +302,16 @@ class ProductDiscoveryWorkflow:
                     "ProductIntelligenceScored"
                 )
 
+
+                events.append(
+                    "DecisionGenerated"
+                )
+
+
                 events.append(
                     "ProductDiscovered"
                 )
+
 
                 events.append(
                     "ProductDiscoveryCompleted"
@@ -292,8 +336,10 @@ class ProductDiscoveryWorkflow:
 
                     duration=(
                         perf_counter()
-                        - start
+                        -
+                        start
                     ),
+
                 )
 
 
@@ -303,9 +349,11 @@ class ProductDiscoveryWorkflow:
 
             products = self.hunter.run()
 
+
             events.append(
                 "ProductsDiscovered"
             )
+
 
             events.append(
                 "ProductDiscoveryCompleted"
@@ -328,12 +376,15 @@ class ProductDiscoveryWorkflow:
 
                 duration=(
                     perf_counter()
-                    - start
+                    -
+                    start
                 ),
+
             )
 
 
         except Exception as exc:
+
 
             events.append(
                 "ProductDiscoveryFailed"
@@ -356,6 +407,8 @@ class ProductDiscoveryWorkflow:
 
                 duration=(
                     perf_counter()
-                    - start
+                    -
+                    start
                 ),
+
             )
