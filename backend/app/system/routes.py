@@ -14,17 +14,17 @@ from app.system.dashboard import DashboardService
 from app.scheduler.scheduler import Scheduler
 
 from app.system.models import (
-SystemStatus,
-SystemSummary,
-WorkerStatus,
-QueueStatus,
-MemoryStatus,
-EventStatus,
-ExecutionStatus,
-RunWorkflowRequest,
-RunWorkflowResponse,
-CommandResponse,
-ProductDiscoveryRequest,
+    SystemStatus,
+    SystemSummary,
+    WorkerStatus,
+    QueueStatus,
+    MemoryStatus,
+    EventStatus,
+    ExecutionStatus,
+    RunWorkflowRequest,
+    RunWorkflowResponse,
+    CommandResponse,
+    ProductDiscoveryRequest,
 )
 
 from app.mission.manager import MissionManager
@@ -50,8 +50,12 @@ dashboard = DashboardService(
 
 scheduler = Scheduler()
 
+# IMPORTANT:
+# MissionManager uses the SAME workforce
+# instance owned by RuntimeAdapter.
 mission_manager = MissionManager(
-    runtime=runtime
+    workforce=runtime.workforce,
+    runtime=runtime,
 )
 
 
@@ -261,7 +265,9 @@ def run_product_discovery(
     metadata = {}
 
     if request and request.url:
+
         metadata["url"] = request.url
+
 
     mission_manager.launch(
         name="ProductDiscovery",
@@ -271,7 +277,9 @@ def run_product_discovery(
         ),
         workflow="product_discovery",
         metadata=metadata,
+        required_capability="product_discovery",
     )
+
 
     return CommandResponse(
         success=True,

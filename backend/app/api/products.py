@@ -4,10 +4,19 @@ Product API
 API endpoints for affiliate products.
 """
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Response,
+    status,
+)
 
 from app.common.pagination import paginate
-from app.dependencies import get_product_service
+
+from app.dependencies import (
+    get_product_service,
+    get_intelligence_history_service,
+)
 
 from app.schemas.product import (
     ProductCreate,
@@ -16,6 +25,10 @@ from app.schemas.product import (
 )
 
 from app.services.product_service import ProductService
+
+from app.services.intelligence_history_service import (
+    IntelligenceHistoryService,
+)
 
 
 router = APIRouter()
@@ -36,14 +49,24 @@ def create_product(
         get_product_service
     ),
 ):
-    """
-    Create a new product.
-    """
 
     return service.create_product(
         product
     )
 
+@router.get(
+    "/{product_id}/intelligence-summary",
+)
+def get_intelligence_summary(
+    product_id: int,
+    service: IntelligenceHistoryService = Depends(
+        get_intelligence_history_service
+    ),
+):
+
+    return service.get_summary(
+        product_id
+    )
 
 # ==========================================================
 # Get Products
@@ -57,9 +80,6 @@ def get_products(
         get_product_service
     ),
 ):
-    """
-    Get all products with pagination.
-    """
 
     products = service.get_products()
 
@@ -68,6 +88,28 @@ def get_products(
         page=page,
         page_size=page_size,
     )
+
+
+# ==========================================================
+# Intelligence History
+# ==========================================================
+
+@router.get(
+    "/{product_id}/intelligence-history",
+)
+def get_intelligence_history(
+    product_id: int,
+    service: IntelligenceHistoryService = Depends(
+        get_intelligence_history_service
+    ),
+):
+
+    return {
+        "product_id": product_id,
+        "history": service.get_history(
+            product_id
+        ),
+    }
 
 
 # ==========================================================
@@ -84,9 +126,6 @@ def get_product(
         get_product_service
     ),
 ):
-    """
-    Get a single product by ID.
-    """
 
     return service.get_product(
         product_id
@@ -108,9 +147,6 @@ def update_product(
         get_product_service
     ),
 ):
-    """
-    Update a product.
-    """
 
     return service.update_product(
         product_id,
@@ -132,9 +168,6 @@ def delete_product(
         get_product_service
     ),
 ):
-    """
-    Delete a product.
-    """
 
     service.delete_product(
         product_id

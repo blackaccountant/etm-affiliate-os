@@ -10,12 +10,40 @@ from app.workforce.worker_info import WorkerInfo
 
 
 class WorkforceManager:
+    """
+    Manages AI workers, assignments,
+    and workforce lifecycle.
+    """
 
-
-    def __init__(self):
+    def __init__(
+        self,
+        load_defaults: bool = False,
+    ):
 
         self.registry = WorkforceRegistry()
 
+        if load_defaults:
+
+            self._load_default_workers()
+
+
+    # --------------------------------------------------
+    # Default Workforce
+    # --------------------------------------------------
+
+    def _load_default_workers(self):
+
+        from app.workforce.default_workers import (
+            create_default_workers,
+        )
+
+        workers = create_default_workers()
+
+        for worker in workers:
+
+            self.register(
+                worker
+            )
 
 
     # --------------------------------------------------
@@ -32,11 +60,9 @@ class WorkforceManager:
         )
 
 
-
     def workers(self):
 
         return self.registry.all()
-
 
 
     # --------------------------------------------------
@@ -59,7 +85,6 @@ class WorkforceManager:
         ]
 
 
-
     # --------------------------------------------------
     # Legacy Assignment
     # --------------------------------------------------
@@ -70,8 +95,6 @@ class WorkforceManager:
     ):
         """
         Assign first available worker.
-
-        Kept for backward compatibility.
         """
 
         for worker in self.available_workers():
@@ -86,7 +109,6 @@ class WorkforceManager:
         return None
 
 
-
     # --------------------------------------------------
     # Capability Assignment
     # --------------------------------------------------
@@ -97,8 +119,7 @@ class WorkforceManager:
         capability: str,
     ):
         """
-        Assign the best available worker
-        matching a capability.
+        Assign worker matching capability.
         """
 
         for worker in self.available_workers():
@@ -115,7 +136,6 @@ class WorkforceManager:
 
 
         return None
-
 
 
     # --------------------------------------------------
@@ -146,7 +166,6 @@ class WorkforceManager:
         return worker
 
 
-
     # --------------------------------------------------
     # Lookup
     # --------------------------------------------------
@@ -159,7 +178,6 @@ class WorkforceManager:
         return self.registry.get(
             worker_name
         )
-
 
 
     # --------------------------------------------------
@@ -179,7 +197,6 @@ class WorkforceManager:
         ]
 
 
-
     def busy_workers(self):
 
         return [
@@ -193,7 +210,6 @@ class WorkforceManager:
         ]
 
 
-
     def offline_workers(self):
 
         return [
@@ -205,7 +221,6 @@ class WorkforceManager:
             if worker.status == "OFFLINE"
 
         ]
-
 
 
     # --------------------------------------------------
@@ -235,6 +250,9 @@ class WorkforceManager:
         }
 
 
+    # --------------------------------------------------
+    # Clear
+    # --------------------------------------------------
 
     def clear(self):
 
