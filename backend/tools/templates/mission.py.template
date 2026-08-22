@@ -1,0 +1,18 @@
+"""
+Generated ETM Mission
+"""
+
+
+from app.mission.mission import Mission
+
+
+class {class_name}Mission(Mission):
+
+
+    def __init__(self):
+
+        super().__init__(
+            name="{name}",
+            objective="Define mission objective",
+            workflow="{workflow}",
+        )
