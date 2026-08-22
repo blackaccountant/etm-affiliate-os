@@ -7,8 +7,9 @@ Coordinates the website research workflow used by AI workers.
 from __future__ import annotations
 
 from app.services.ai_analyzer import AIAnalyzer
-from app.services.content_extractor import ContentExtractor
-from app.services.website_fetcher import WebsiteFetcher
+from app.services.website_research_service import (
+    WebsiteResearchService,
+)
 from app.schemas.affiliate_analysis import AffiliateAnalysis
 
 
@@ -16,19 +17,28 @@ class ResearchPipeline:
     """
     End-to-end website research pipeline.
 
-    Converts raw AI analyzer output into the
-    structured AffiliateAnalysis model expected
-    by downstream workflows.
+    Flow:
+
+        Website
+            ↓
+        Page Discovery
+            ↓
+        Multi-page Research
+            ↓
+        AI Analysis
+            ↓
+        AffiliateAnalysis
     """
 
     def __init__(self):
 
-        self.fetcher = WebsiteFetcher()
+        self.researcher = (
+            WebsiteResearchService()
+        )
 
-        self.extractor = ContentExtractor()
-
-        self.analyzer = AIAnalyzer()
-
+        self.analyzer = (
+            AIAnalyzer()
+        )
 
     def analyze(
         self,
@@ -36,42 +46,45 @@ class ResearchPipeline:
     ) -> AffiliateAnalysis:
 
         """
-        Analyze a company website and return
+        Research a website and return
         structured affiliate intelligence.
         """
 
-        html = self.fetcher.fetch(
-            url
-        )
-
-
-        if not html:
+        if not url:
 
             raise ValueError(
-                "Unable to fetch website."
+                "A URL is required."
             )
-
-
-        text = self.extractor.extract(
-            html
-        )
-
-
-        if not text:
-
-            raise ValueError(
-                "No readable content extracted."
-            )
-
-
-        raw_result = self.analyzer.analyze_product(
-            website_url=url,
-            website_text=text,
-        )
-
 
         # --------------------------------------------------
-        # Normalize AI output
+        # Step 1 - Multi-page website research
+        # --------------------------------------------------
+
+        research_text = (
+            self.researcher.research(
+                url
+            )
+        )
+
+        if not research_text:
+
+            raise ValueError(
+                "No readable website content found."
+            )
+
+        # --------------------------------------------------
+        # Step 2 - AI factual analysis
+        # --------------------------------------------------
+
+        raw_result = (
+            self.analyzer.analyze_product(
+                website_url=url,
+                website_text=research_text,
+            )
+        )
+
+        # --------------------------------------------------
+        # Step 3 - Normalize result
         # --------------------------------------------------
 
         if isinstance(
@@ -80,7 +93,6 @@ class ResearchPipeline:
         ):
 
             return raw_result
-
 
         if isinstance(
             raw_result,
@@ -91,8 +103,8 @@ class ResearchPipeline:
                 raw_result
             )
 
-
         raise TypeError(
             "AIAnalyzer returned an unsupported "
-            f"result type: {type(raw_result).__name__}"
+            f"result type: "
+            f"{type(raw_result).__name__}"
         )

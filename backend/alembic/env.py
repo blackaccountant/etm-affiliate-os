@@ -1,22 +1,24 @@
-from logging.config import fileConfig
+﻿from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 from app.core.config import settings
 from app.database.base import Base
+import app.models  # noqa: F401
 
-# Alembic Config object
+
 config = context.config
 
-# Read the database URL from your application's settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option(
+    "sqlalchemy.url",
+    settings.DATABASE_URL,
+)
 
-# Configure logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Metadata for autogenerate
+
 target_metadata = Base.metadata
 
 

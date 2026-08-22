@@ -17,13 +17,22 @@ from app.schemas.affiliate_analysis import AffiliateAnalysis
 class DatabaseResult(BaseModel):
     """
     Database operation result.
+
+    Supports both new product creation and
+    intelligence refreshes for existing products.
     """
 
     saved: bool = False
 
     duplicate: bool = False
 
+    updated: bool = False
+
     product_id: int | None = None
+
+    previous_score: int | None = None
+
+    new_score: int | None = None
 
     message: str = ""
 

@@ -1,11 +1,7 @@
 """
 Base AI Provider
 
-Every AI provider (OpenAI, Ollama, Anthropic, Gemini, etc.)
-must inherit from this class.
-
-This guarantees that every provider exposes the same interface
-to the AI Manager.
+Defines the interface implemented by production AI providers.
 """
 
 from abc import ABC, abstractmethod
@@ -15,7 +11,7 @@ from app.ai.result import AIResult
 
 class BaseProvider(ABC):
     """
-    Abstract base class for all AI providers.
+    Abstract base class for AI providers.
     """
 
     @property
@@ -23,11 +19,6 @@ class BaseProvider(ABC):
     def provider_name(self) -> str:
         """
         Return the provider name.
-
-        Example:
-            OpenAI
-            Ollama
-            Anthropic
         """
         pass
 
@@ -35,7 +26,7 @@ class BaseProvider(ABC):
     @abstractmethod
     def default_model(self) -> str:
         """
-        Return the default model used by this provider.
+        Return the default model used by the provider.
         """
         pass
 

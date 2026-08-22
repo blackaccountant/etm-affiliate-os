@@ -1,16 +1,27 @@
 """
 AI Configuration
 
-Central configuration for all AI providers.
+Central configuration for the production AI provider.
 """
 
+from pathlib import Path
+
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Resolve backend directory:
+# backend/app/ai/config.py -> backend
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+ENV_FILE = BACKEND_DIR / ".env"
 
 
 class AISettings(BaseSettings):
     """
-    AI configuration settings.
+    Production AI configuration.
+
+    ETM Affiliate OS uses OpenAI as its AI provider.
     """
 
     default_provider: str = Field(
@@ -28,19 +39,11 @@ class AISettings(BaseSettings):
         alias="OPENAI_DEFAULT_MODEL",
     )
 
-    ollama_base_url: str = Field(
-        default="http://localhost:11434",
-        alias="OLLAMA_BASE_URL",
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
-
-    ollama_default_model: str = Field(
-        default="llama3.1",
-        alias="OLLAMA_DEFAULT_MODEL",
-    )
-
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
 
 
 ai_settings = AISettings()

@@ -1,23 +1,23 @@
 """
 AI Provider Factory
 
-Creates AI provider instances based on configuration.
+Production AI provider factory.
+
+ETM Affiliate OS uses OpenAI as its production AI provider.
+Local AI providers are not supported in production.
 """
 
-from app.ai.config import ai_settings
 from app.ai.providers.base_provider import BaseProvider
-from app.ai.providers.ollama_provider import OllamaProvider
 from app.ai.providers.openai_provider import OpenAIProvider
 
 
 class ProviderFactory:
     """
-    Factory for AI providers.
+    Factory for production AI providers.
     """
 
     _providers = {
         "openai": OpenAIProvider,
-        "ollama": OllamaProvider,
     }
 
     @classmethod
@@ -26,9 +26,7 @@ class ProviderFactory:
         provider: str | None = None,
     ) -> BaseProvider:
         """
-        Create an AI provider.
-
-        If provider is None, OpenAI is used by default.
+        Create the production AI provider.
         """
 
         provider_name = (
@@ -39,7 +37,8 @@ class ProviderFactory:
 
         if provider_class is None:
             raise ValueError(
-                f"Unsupported AI provider: {provider_name}"
+                f"Unsupported AI provider: {provider_name}. "
+                f"Supported providers: {list(cls._providers.keys())}"
             )
 
         return provider_class()
@@ -47,6 +46,6 @@ class ProviderFactory:
     @classmethod
     def available_providers(cls) -> list[str]:
         """
-        Return available providers.
+        Return available production providers.
         """
         return list(cls._providers.keys())

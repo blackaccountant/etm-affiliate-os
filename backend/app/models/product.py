@@ -1,7 +1,15 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.models.affiliate_program import AffiliateProgram
 
 from sqlalchemy import DateTime, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from app.database.base import Base
 
@@ -118,6 +126,28 @@ class Product(Base):
         String(100),
         default="active",
         nullable=False,
+    )
+
+    # ----------------------------
+    # Affiliate Relationships
+    # ----------------------------
+
+    affiliate_programs: Mapped[list["AffiliateProgram"]] = relationship(
+        "AffiliateProgram",
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )
+
+    affiliate_opportunities = relationship(
+        "AffiliateOpportunity",
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )
+
+    content_assets = relationship(
+        "AffiliateContentAsset",
+        back_populates="product",
+        cascade="all, delete-orphan",
     )
 
     # ----------------------------

@@ -49,10 +49,36 @@ def create_product(
         get_product_service
     ),
 ):
+    return service.create_product(product)
 
-    return service.create_product(
-        product
-    )
+
+# ==========================================================
+# Get Products
+# ==========================================================
+
+@router.get(
+    "/",
+    response_model=list[ProductResponse],
+)
+def get_products(
+    page: int = 1,
+    page_size: int = 20,
+    service: ProductService = Depends(
+        get_product_service
+    ),
+):
+
+    products = service.get_products()
+
+    return [
+        ProductResponse.model_validate(product)
+        for product in products
+    ]
+
+
+# ==========================================================
+# Intelligence Summary
+# ==========================================================
 
 @router.get(
     "/{product_id}/intelligence-summary",
@@ -64,30 +90,7 @@ def get_intelligence_summary(
     ),
 ):
 
-    return service.get_summary(
-        product_id
-    )
-
-# ==========================================================
-# Get Products
-# ==========================================================
-
-@router.get("/")
-def get_products(
-    page: int = 1,
-    page_size: int = 20,
-    service: ProductService = Depends(
-        get_product_service
-    ),
-):
-
-    products = service.get_products()
-
-    return paginate(
-        products,
-        page=page,
-        page_size=page_size,
-    )
+    return service.get_summary(product_id)
 
 
 # ==========================================================
@@ -106,14 +109,12 @@ def get_intelligence_history(
 
     return {
         "product_id": product_id,
-        "history": service.get_history(
-            product_id
-        ),
+        "history": service.get_history(product_id),
     }
 
 
 # ==========================================================
-# Get Product
+# Get Single Product
 # ==========================================================
 
 @router.get(
@@ -127,9 +128,7 @@ def get_product(
     ),
 ):
 
-    return service.get_product(
-        product_id
-    )
+    return service.get_product(product_id)
 
 
 # ==========================================================
@@ -169,9 +168,7 @@ def delete_product(
     ),
 ):
 
-    service.delete_product(
-        product_id
-    )
+    service.delete_product(product_id)
 
     return Response(
         status_code=status.HTTP_204_NO_CONTENT

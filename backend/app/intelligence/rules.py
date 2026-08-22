@@ -1,7 +1,19 @@
 """
 Affiliate Intelligence Rules
 
-Business rules for evaluating affiliate opportunities.
+Deterministic business rules for evaluating
+affiliate opportunities.
+
+Important design principle:
+
+Unknown affiliate information is NOT treated as
+proof that an affiliate program does not exist.
+
+The system separates:
+
+1. Commercial attractiveness
+2. Affiliate-program verification
+3. Commission transparency
 """
 
 from __future__ import annotations
@@ -14,7 +26,7 @@ from app.intelligence.weights import DEFAULT_WEIGHTS
 class AffiliateRules:
     """
     Evaluates an AffiliateAnalysis and produces
-    explainable scoring reasons.
+    explainable deterministic scoring reasons.
     """
 
     def evaluate(
@@ -38,7 +50,7 @@ class AffiliateRules:
 
         affiliate = (
             analysis.affiliate_program_likely or ""
-        ).lower()
+        ).strip().lower()
 
         summary = (
             analysis.summary or ""
@@ -46,7 +58,7 @@ class AffiliateRules:
 
         commission = (
             analysis.commission_estimate or ""
-        ).lower()
+        ).strip().lower()
 
         # ==================================================
         # POSITIVE SIGNALS
@@ -81,7 +93,18 @@ class AffiliateRules:
         # Subscription Revenue
         # ------------------------------------------
 
-        if "subscription" in pricing:
+        if any(
+            phrase in pricing
+            for phrase in (
+                "subscription",
+                "recurring",
+                "monthly",
+                "annual",
+                "yearly",
+                "saas",
+                "tiered",
+            )
+        ):
 
             reasons.append(
                 IntelligenceReason(
@@ -91,8 +114,8 @@ class AffiliateRules:
                         .subscription_pricing
                     ),
                     description=(
-                        "Subscription products can "
-                        "create recurring affiliate value."
+                        "Subscription-based products can "
+                        "create recurring customer value."
                     ),
                 )
             )
@@ -106,6 +129,7 @@ class AffiliateRules:
             or "pay as you go" in pricing
             or "pay-as-you-go" in pricing
             or "credits" in pricing
+            or "usage-based" in pricing
         ):
 
             reasons.append(
@@ -130,6 +154,7 @@ class AffiliateRules:
             "ai" in category
             or "artificial intelligence" in category
             or "machine learning" in category
+            or "ai" in summary
         ):
 
             reasons.append(
@@ -179,6 +204,7 @@ class AffiliateRules:
             "enterprise" in audience
             or "enterprise" in pricing
             or "enterprise" in summary
+            or "enterprise" in category
         ):
 
             reasons.append(
@@ -189,8 +215,8 @@ class AffiliateRules:
                         .enterprise_market
                     ),
                     description=(
-                        "Enterprise customers can "
-                        "have higher lifetime value."
+                        "Enterprise customers can have "
+                        "higher lifetime value."
                     ),
                 )
             )
@@ -205,8 +231,15 @@ class AffiliateRules:
                 "global",
                 "startup",
                 "business",
+                "businesses",
                 "teams",
                 "team",
+                "company",
+                "companies",
+                "enterprise",
+                "small business",
+                "mid-sized",
+                "mid-sized businesses",
             )
         ):
 
@@ -233,8 +266,11 @@ class AffiliateRules:
             for word in (
                 "enterprise",
                 "premium",
+                "professional",
                 "pro",
+                "business",
                 "high ticket",
+                "high-ticket",
             )
         ):
 
@@ -259,85 +295,83 @@ class AffiliateRules:
         if (
             "free trial" in summary
             or "free trial" in pricing
+            or "free tools" in summary
+            or "free plan" in pricing
+            or "freemium" in pricing
         ):
 
             reasons.append(
                 IntelligenceReason(
-                    title="Free Trial",
+                    title="Low-Friction Entry",
                     points=(
                         DEFAULT_WEIGHTS
                         .free_trial
                     ),
                     description=(
-                        "Free trials can reduce "
+                        "Free entry points can reduce "
                         "conversion friction."
                     ),
                 )
             )
 
         # ==================================================
-        # NEGATIVE SIGNALS
+        # AFFILIATE VERIFICATION
         # ==================================================
 
-        # ------------------------------------------
-        # Affiliate Program Uncertainty
-        # ------------------------------------------
+        # IMPORTANT:
+        #
+        # Unknown does NOT receive a -20 penalty.
+        #
+        # Unknown means:
+        #
+        # "We don't have enough evidence yet."
+        #
+        # That should trigger a verification workflow,
+        # not destroy the commercial score.
 
-        uncertain_affiliate = any(
-            phrase in affiliate
-            for phrase in (
-                "unknown",
-                "possible",
-                "uncertain",
-                "unclear",
-                "not clearly",
-                "not visible",
-                "not confirmed",
-                "likely",
-            )
-        )
-
-        confirmed_negative_affiliate = any(
-            phrase in affiliate
-            for phrase in (
-                "no affiliate",
-                "not available",
-                "none",
-                "does not have",
-                "no public affiliate",
-            )
-        )
-
-        if confirmed_negative_affiliate:
+        if affiliate in {
+            "no",
+            "none",
+            "not available",
+            "no affiliate",
+            "no affiliate program",
+        }:
 
             reasons.append(
                 IntelligenceReason(
                     title="No Affiliate Program Confirmed",
                     points=-25,
                     description=(
-                        "No usable affiliate program "
-                        "was identified."
+                        "The supplied evidence indicates "
+                        "that no usable affiliate program exists."
                     ),
                 )
             )
 
-        elif uncertain_affiliate:
+        elif affiliate in {
+            "unknown",
+            "",
+            "uncertain",
+            "unclear",
+            "possible",
+            "likely",
+        }:
 
             reasons.append(
                 IntelligenceReason(
-                    title="Affiliate Program Uncertain",
-                    points=-20,
+                    title="Affiliate Program Requires Verification",
+                    points=0,
                     description=(
-                        "The company may have an affiliate "
-                        "or referral opportunity, but it "
-                        "has not been clearly confirmed."
+                        "The supplied website content does not "
+                        "provide enough evidence to confirm an "
+                        "affiliate program. Further research is required."
                     ),
                 )
             )
 
-        # ------------------------------------------
-        # Commission Unknown
-        # ------------------------------------------
+        # ==================================================
+        # COMMISSION TRANSPARENCY
+        # ==================================================
 
         commission_unknown = (
             not commission
@@ -354,13 +388,17 @@ class AffiliateRules:
 
             reasons.append(
                 IntelligenceReason(
-                    title="Commission Unknown",
-                    points=-10,
+                    title="Commission Requires Verification",
+                    points=0,
                     description=(
-                        "Affiliate payout information "
-                        "is unavailable or unconfirmed."
+                        "Affiliate payout information is not "
+                        "confirmed by the supplied website evidence."
                     ),
                 )
             )
+
+        # ==================================================
+        # RETURN
+        # ==================================================
 
         return reasons
