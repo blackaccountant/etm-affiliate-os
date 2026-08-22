@@ -1,7 +1,7 @@
 """
 AI Result Model
 
-Defines the standard response returned by every AI provider
+Defines the standard response returned by AI providers
 used within ETM Affiliate OS.
 """
 
@@ -15,9 +15,8 @@ class AIResult(BaseModel):
     """
     Standard AI response object.
 
-    Every provider (OpenAI, Ollama, etc.) should return this
-    model so the rest of the application never depends on
-    provider-specific response formats.
+    The rest of the application uses this model instead of
+    depending on provider-specific response formats.
     """
 
     success: bool = True

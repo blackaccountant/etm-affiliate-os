@@ -1,17 +1,17 @@
 """
 OpenAI Provider
 
-Implementation of the BaseProvider using the
-official OpenAI Python SDK.
+Production implementation of the BaseProvider using
+the official OpenAI Python SDK.
 """
 
 import time
 
 from openai import OpenAI
 
-from app.ai.config import ai_settings
 from app.ai.providers.base_provider import BaseProvider
 from app.ai.result import AIResult
+from app.core.config import settings
 
 
 class OpenAIProvider(BaseProvider):
@@ -25,7 +25,7 @@ class OpenAIProvider(BaseProvider):
 
     @property
     def default_model(self) -> str:
-        return ai_settings.openai_default_model
+        return settings.OPENAI_DEFAULT_MODEL
 
     def generate(
         self,
@@ -38,21 +38,20 @@ class OpenAIProvider(BaseProvider):
 
         model = kwargs.get("model") or self.default_model
 
-        key = (ai_settings.openai_api_key or "").strip()
+        key = (settings.OPENAI_API_KEY or "").strip()
 
-        print("\n========== OPENAI DEBUG ==========")
-        print(f"Provider : {self.provider_name}")
-        print(f"Model    : {model}")
-        print(f"Key Head : {key[:20]}...")
-        print(f"Key Tail : ...{key[-6:]}")
-        print(f"Key Len  : {len(key)}")
-        print("=================================\n")
+        if not key:
+            return AIResult(
+                success=False,
+                provider=self.provider_name,
+                model=model,
+                content="",
+                error="OPENAI_API_KEY is not configured.",
+            )
 
         start = time.perf_counter()
 
         try:
-            # Create a fresh client every request.
-            # This guarantees we're using the current key from .env.
             client = OpenAI(
                 api_key=key,
             )
@@ -71,20 +70,26 @@ class OpenAIProvider(BaseProvider):
                 provider=self.provider_name,
                 model=model,
                 content=response.output_text,
-                prompt_tokens=getattr(usage, "input_tokens", 0),
-                completion_tokens=getattr(usage, "output_tokens", 0),
-                total_tokens=getattr(usage, "total_tokens", 0),
+                prompt_tokens=getattr(
+                    usage,
+                    "input_tokens",
+                    0,
+                ),
+                completion_tokens=getattr(
+                    usage,
+                    "output_tokens",
+                    0,
+                ),
+                total_tokens=getattr(
+                    usage,
+                    "total_tokens",
+                    0,
+                ),
                 execution_time=elapsed,
             )
 
         except Exception as exc:
-
             elapsed = time.perf_counter() - start
-
-            print("\n========== OPENAI ERROR ==========")
-            print(type(exc).__name__)
-            print(exc)
-            print("==================================\n")
 
             return AIResult(
                 success=False,
@@ -100,9 +105,12 @@ class OpenAIProvider(BaseProvider):
         Verify OpenAI connectivity.
         """
 
-        try:
-            key = (ai_settings.openai_api_key or "").strip()
+        key = (settings.OPENAI_API_KEY or "").strip()
 
+        if not key:
+            return False
+
+        try:
             client = OpenAI(
                 api_key=key,
             )
@@ -111,8 +119,5 @@ class OpenAIProvider(BaseProvider):
 
             return True
 
-        except Exception as exc:
-            print("\n========== HEALTH CHECK ==========")
-            print(exc)
-            print("==================================\n")
+        except Exception:
             return False

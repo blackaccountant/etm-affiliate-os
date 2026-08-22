@@ -10,17 +10,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.ai import router as ai_router
 from app.api.products import router as products_router
 from app.api.workers import router as workers_router
+from app.api.executions import router as execution_router
+
 from app.system.routes import router as system_router
 
 from app.core.config import settings
 from app.exceptions.handlers import register_exception_handlers
 from app.logging.logger import get_logger
 from app.logging.logging_config import setup_logging
-from app.api.executions import router as execution_router
 
+from app.api.publisher import router as publisher_router
+from app.api.affiliate_links import router as affiliate_links_router
+from app.api.affiliate_conversions import router as affiliate_conversions_router
+from app.api.affiliate_earnings import router as affiliate_earnings_router
+from app.api.affiliate_payouts import router as affiliate_payouts_router
 
 # -----------------------------------------------------
-# Configure Logging
+# Logging
 # -----------------------------------------------------
 
 setup_logging()
@@ -29,7 +35,7 @@ logger = get_logger(__name__)
 
 
 # -----------------------------------------------------
-# Create FastAPI Application
+# FastAPI App
 # -----------------------------------------------------
 
 app = FastAPI(
@@ -40,7 +46,7 @@ app = FastAPI(
 
 
 # -----------------------------------------------------
-# CORS Configuration
+# CORS
 # -----------------------------------------------------
 
 app.add_middleware(
@@ -58,25 +64,21 @@ app.add_middleware(
 
 
 # -----------------------------------------------------
-# Register Global Exception Handlers
+# Exceptions
 # -----------------------------------------------------
 
 register_exception_handlers(app)
+
 
 logger.info("Starting ETM Affiliate OS...")
 
 
 # -----------------------------------------------------
-# System Endpoints
+# System Routes
 # -----------------------------------------------------
 
 @app.get("/", tags=["System"])
 def root():
-    """
-    Root endpoint.
-    """
-    logger.info("Root endpoint accessed.")
-
     return {
         "success": True,
         "message": f"Welcome to {settings.APP_NAME}",
@@ -86,11 +88,6 @@ def root():
 
 @app.get("/health", tags=["System"])
 def health():
-    """
-    Health check endpoint.
-    """
-    logger.info("Health check requested.")
-
     return {
         "success": True,
         "status": "healthy",
@@ -116,9 +113,29 @@ app.include_router(
 )
 
 app.include_router(
+    execution_router,
+)
+
+app.include_router(
     system_router,
 )
 
 app.include_router(
-    execution_router
+    publisher_router
+)
+
+app.include_router(
+    affiliate_links_router
+)
+
+app.include_router(
+    affiliate_conversions_router
+)
+
+app.include_router(
+    affiliate_earnings_router
+)
+
+app.include_router(
+    affiliate_payouts_router
 )

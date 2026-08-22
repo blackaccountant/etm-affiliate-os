@@ -11,31 +11,6 @@ from typing import List
 from pydantic import BaseModel, Field
 
 
-class AffiliateAnalysis(BaseModel):
-    """
-    Input model for affiliate intelligence scoring.
-    """
-
-    company: str
-
-    website: str
-
-    category: str = ""
-
-    summary: str = ""
-
-    pricing_model: str = ""
-
-    affiliate_program_likely: str = ""
-
-    commission_type: str = ""
-
-    commission_estimate: str = ""
-
-    target_audience: list[str] = Field(
-        default_factory=list
-    )
-
 
 class IntelligenceReason(BaseModel):
     """

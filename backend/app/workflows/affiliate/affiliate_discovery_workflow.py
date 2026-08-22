@@ -1,75 +1,116 @@
 """
 Affiliate Discovery Workflow
 
-Complete affiliate discovery pipeline.
+Production affiliate intelligence pipeline.
 
 Flow:
 
-    URL
-      ↓
-    Research Pipeline
-      ↓
-    Affiliate Analysis
-      ↓
-    Intelligence Scoring
-      ↓
-    Decision Engine
-      ↓
-    Database Save
-      ↓
-    WorkflowResult
+URL
+ ↓
+Research
+ ↓
+Discovery
+ ↓
+Scoring
+ ↓
+Decision
+ ↓
+Save Intelligence
+ ↓
+Opportunity Generation
+ ↓
+Content Strategy
+ ↓
+Content Generation
+ ↓
+SEO Optimization
+ ↓
+Approval Engine
+ ↓
+Publishing Ready
 """
+
 
 from time import perf_counter
 
+
 from app.workflow_engine.workflow_result import WorkflowResult
 
+
 from app.services.research_pipeline import ResearchPipeline
+from app.services.affiliate_discovery_service import AffiliateDiscoveryService
 
 from app.services.product_intelligence_service import (
     ProductIntelligenceService,
 )
 
-from app.intelligence.scoring import (
-    AffiliateScoringEngine,
+from app.services.opportunity_engine import OpportunityEngine
+
+from app.services.affiliate_opportunity_service import (
+    AffiliateOpportunityService,
 )
 
-from app.intelligence.decision_engine import (
-    AffiliateDecisionEngine,
+from app.services.content_strategy_engine import (
+    ContentStrategyEngine,
 )
+
+from app.services.affiliate_content_asset_service import (
+    AffiliateContentAssetService,
+)
+
+from app.services.content_execution_service import (
+    ContentExecutionService,
+)
+
+from app.services.seo_optimizer_service import (
+    SEOOptimizerService,
+)
+
+from app.services.content_approval_service import (
+    ContentApprovalService,
+)
+
+from app.services.publishing_queue_service import (
+    PublishingQueueService,
+)
+
+
+from app.intelligence.scoring import AffiliateScoringEngine
+from app.intelligence.decision_engine import AffiliateDecisionEngine
+
+
+from app.models.product import Product
+from app.models.affiliate_program import AffiliateProgram
+
 
 from app.database.session import SessionLocal
 
 
+
 class AffiliateDiscoveryWorkflow:
-    """
-    Complete Affiliate Discovery Workflow.
 
-    Coordinates:
-
-    1. Website research
-    2. Affiliate analysis
-    3. Intelligence scoring
-    4. Business decision
-    5. Database persistence
-    6. Workflow result
-    """
 
     def __init__(self):
 
-        self.pipeline = ResearchPipeline()
+        self.research_pipeline = ResearchPipeline()
 
-        self.scorer = AffiliateScoringEngine()
+        self.discovery_service = AffiliateDiscoveryService()
 
-        self.decision_engine = (
-            AffiliateDecisionEngine()
-        )
+        self.scoring_engine = AffiliateScoringEngine()
+
+        self.decision_engine = AffiliateDecisionEngine()
+
+        self.opportunity_engine = OpportunityEngine()
+
+        self.content_strategy_engine = ContentStrategyEngine()
+
 
 
     def execute(
         self,
         payload: dict,
     ):
+
 
         start = perf_counter()
 
@@ -80,24 +121,22 @@ class AffiliateDiscoveryWorkflow:
         ]
 
 
+        content_assets = []
+
+        opportunity = None
+
+
+
         try:
 
-            # ==================================================
-            # Step 1 - Get URL
-            # ==================================================
 
-            payload = payload or {}
-
-            url = payload.get(
-                "url"
-            )
+            url = payload.get("url")
 
 
             if not url:
 
                 raise ValueError(
-                    "A URL is required for "
-                    "affiliate discovery."
+                    "URL is required"
                 )
 
 
@@ -106,30 +145,33 @@ class AffiliateDiscoveryWorkflow:
             )
 
 
-            # ==================================================
-            # Step 2 - AI Research
-            # ==================================================
-
-            analysis = self.pipeline.analyze(
-                url
+            analysis = (
+                self.research_pipeline.analyze(url)
             )
 
-
-            events.append(
-                "AnalysisCompleted"
-            )
 
             events.append(
                 "ResearchCompleted"
             )
 
 
-            # ==================================================
-            # Step 3 - Intelligence Scoring
-            # ==================================================
 
-            intelligence = self.scorer.score(
-                analysis
+            discovery = (
+                self.discovery_service.discover(url)
+            )
+
+
+            events.append(
+                "AffiliateDiscoveryCompleted"
+            )
+
+
+
+            intelligence = (
+                self.scoring_engine.score(
+                    analysis,
+                    discovery,
+                )
             )
 
 
@@ -138,12 +180,11 @@ class AffiliateDiscoveryWorkflow:
             )
 
 
-            # ==================================================
-            # Step 4 - Decision Engine
-            # ==================================================
 
-            decision = self.decision_engine.decide(
-                intelligence
+            decision = (
+                self.decision_engine.decide(
+                    intelligence
+                )
             )
 
 
@@ -152,18 +193,16 @@ class AffiliateDiscoveryWorkflow:
             )
 
 
-            # ==================================================
-            # Step 5 - Database Save
-            # ==================================================
 
-            service = ProductIntelligenceService(
-                db
-            )
+            intelligence_service = ProductIntelligenceService(db)
 
 
-            database = service.save_analysis(
-                analysis,
-                intelligence,
+            database = (
+                intelligence_service.save_analysis(
+                    analysis,
+                    discovery,
+                    intelligence,
+                )
             )
 
 
@@ -172,14 +211,151 @@ class AffiliateDiscoveryWorkflow:
             )
 
 
-            # ==================================================
-            # Step 6 - Complete
-            # ==================================================
 
-            duration = (
-                perf_counter()
-                - start
+            product = (
+                db.query(Product)
+                .filter(
+                    Product.id == database.product_id
+                )
+                .first()
             )
+
+
+
+            affiliate_program = None
+
+
+            if product:
+
+                affiliate_program = (
+                    db.query(AffiliateProgram)
+                    .filter(
+                        AffiliateProgram.product_id
+                        ==
+                        product.id
+                    )
+                    .first()
+                )
+
+
+
+            if product and affiliate_program:
+
+
+                opportunity = (
+                    self.opportunity_engine.generate(
+                        product,
+                        affiliate_program,
+                        intelligence,
+                    )
+                )
+
+
+
+                AffiliateOpportunityService(db).save_opportunity(
+                    product.id,
+                    opportunity,
+                )
+
+
+                events.append(
+                    "OpportunityGenerated"
+                )
+
+
+
+                content_assets = (
+                    self.content_strategy_engine.generate(
+                        product,
+                        opportunity,
+                    )
+                )
+
+
+                events.append(
+                    "ContentAssetsGenerated"
+                )
+
+
+
+                saved_assets = (
+                    AffiliateContentAssetService(db)
+                    .save_assets(
+                        product.id,
+                        content_assets,
+                    )
+                )
+
+
+                events.append(
+                    "ContentAssetsSaved"
+                )
+
+
+
+                execution_service = ContentExecutionService(db)
+
+
+                seo_service = SEOOptimizerService(db)
+
+
+                approval_service = ContentApprovalService(db)
+
+
+
+                for asset in saved_assets:
+
+
+                    execution_service.generate_content(
+                        asset.id
+                    )
+
+
+                    events.append(
+                        "ContentGenerated"
+                    )
+
+
+
+                    seo_service.analyze_content(
+                        asset.id
+                    )
+
+
+                    events.append(
+                        "SEOAnalysisCompleted"
+                    )
+
+
+
+                    approval = approval_service.evaluate(
+                        asset.id
+                    )
+
+
+                    events.append(
+                        "ApprovalGenerated"
+                    )
+
+
+
+                    if approval.decision == "approved":
+
+                        publishing_service = PublishingQueueService(db)
+
+
+                        publishing_service.queue_content(
+                            asset.id
+                    )
+
+
+                    events.append(
+                        "PublishingQueued"
+                    )
+
+
+
+            duration = perf_counter() - start
 
 
             events.append(
@@ -197,11 +373,17 @@ class AffiliateDiscoveryWorkflow:
 
                     "analysis": analysis,
 
+                    "discovery": discovery,
+
                     "intelligence": intelligence,
 
                     "decision": decision,
 
                     "database": database,
+
+                    "opportunity": opportunity,
+
+                    "content_assets": content_assets,
 
                 },
 
@@ -214,17 +396,8 @@ class AffiliateDiscoveryWorkflow:
             )
 
 
+
         except Exception as exc:
-
-            duration = (
-                perf_counter()
-                - start
-            )
-
-
-            events.append(
-                "WorkflowFailed"
-            )
 
 
             return WorkflowResult(
@@ -235,13 +408,15 @@ class AffiliateDiscoveryWorkflow:
 
                 data={},
 
-                events=events,
+                events=events + [
+                    "WorkflowFailed"
+                ],
 
                 errors=[
                     str(exc)
                 ],
 
-                duration=duration,
+                duration=perf_counter()-start,
 
             )
 

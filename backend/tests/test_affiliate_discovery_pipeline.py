@@ -55,7 +55,7 @@ def test_affiliate_discovery_pipeline():
     analysis = result.data["analysis"]
 
     assert analysis["company"] == "OpenRouter"
-    assert analysis["website"] == "https://openrouter.ai"
+    assert analysis["website"] == "https://openrouter.ai/"
 
     # -------------------------------------------------
     # Intelligence

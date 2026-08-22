@@ -36,4 +36,9 @@ class ProductResponse(ProductBase):
     id: int
     created_at: datetime
 
+    # Existing/discovered products may not have
+    # affiliate information yet.
+    affiliate_url: Optional[HttpUrl] = None
+    cookie_duration: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
