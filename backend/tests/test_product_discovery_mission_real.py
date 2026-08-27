@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from app.mission.product_discovery import (
     ProductDiscoveryMission,
 )
@@ -34,6 +38,13 @@ def test_product_discovery_mission_object():
 
 
 
+@pytest.mark.skipif(
+    os.getenv("ETM_RUN_LIVE_INTEGRATION") != "1",
+    reason=(
+        "Requires live affiliate website and AI integration; "
+        "set ETM_RUN_LIVE_INTEGRATION=1 to run."
+    ),
+)
 def test_product_discovery_mission_launch():
 
     manager = MissionManager()

@@ -1,5 +1,6 @@
 from app.ai.workers.product_hunter import ProductHunterWorker
 from app.ai.workers.task import WorkerTask
+from app.workflow_engine.workflow_result import WorkflowResult
 
 
 def test_affiliate_discovery_pipeline():
@@ -26,12 +27,38 @@ def test_affiliate_discovery_pipeline():
     """
 
     worker = ProductHunterWorker()
+    worker.workflow = type(
+        "SuccessfulWorkflow",
+        (),
+        {
+            "execute": lambda _, payload: WorkflowResult(
+                success=True,
+                workflow="affiliate_discovery",
+                data={
+                    "analysis": {
+                        "company": "OpenRouter",
+                        "website": "https://openrouter.ai/",
+                    },
+                    "intelligence": {
+                        "score": 85,
+                        "grade": "A",
+                        "confidence": 0.9,
+                    },
+                    "database": {
+                        "saved": True,
+                        "duplicate": False,
+                        "product_id": "product-1",
+                    },
+                },
+            )
+        },
+    )()
 
     task = WorkerTask(
         worker_name="ProductHunter",
         action="analyze_website",
         payload={
-            "url": "https://openrouter.ai"
+            "url": "https://example.invalid"
         },
     )
 
