@@ -1,49 +1,77 @@
 """
 Retry Manager
 
-Coordinates retry scanning and retry execution.
+Coordinates retry recovery and execution.
 
-The manager supports both:
+The manager supports:
 
     process_once()
         Manual / synchronous retry processing.
 
     start()
-        Start a background retry recovery loop.
+        Start the background retry recovery loop.
 
     stop()
         Gracefully stop the background retry recovery loop.
+
+Production mode may provide a cycle_processor callback.
+The callback is responsible for creating and disposing
+resources such as database sessions for each retry cycle.
+
+Legacy scanner/worker mode remains supported for tests
+and backward compatibility.
 """
 
 import threading
-import time
 
 
 class RetryManager:
 
     def __init__(
         self,
-        scanner,
-        worker,
+        scanner=None,
+        worker=None,
         poll_interval: float = 30.0,
+        cycle_processor=None,
     ):
 
         self.scanner = scanner
 
         self.worker = worker
 
-        self.poll_interval = (
-            max(
-                float(
-                    poll_interval
-                ),
-                0.1,
-            )
+        self.cycle_processor = (
+            cycle_processor
+        )
+
+        self.poll_interval = max(
+            float(
+                poll_interval
+            ),
+            0.1,
         )
 
 
         # ==================================================
-        # Background lifecycle
+        # Configuration Validation
+        # ==================================================
+
+        if (
+            self.cycle_processor is None
+            and (
+                self.scanner is None
+                or self.worker is None
+            )
+        ):
+
+            raise ValueError(
+                "RetryManager requires either "
+                "cycle_processor or both "
+                "scanner and worker."
+            )
+
+
+        # ==================================================
+        # Background Lifecycle
         # ==================================================
 
         self._stop_event = (
@@ -58,7 +86,7 @@ class RetryManager:
 
 
         # ==================================================
-        # Runtime state
+        # Runtime State
         # ==================================================
 
         self._running = False
@@ -69,6 +97,33 @@ class RetryManager:
 
 
     # ==================================================
+    # Normalize Results
+    # ==================================================
+
+    @staticmethod
+    def _normalize_results(
+        results,
+    ):
+
+        if results is None:
+
+            return []
+
+
+        if isinstance(
+            results,
+            list,
+        ):
+
+            return results
+
+
+        return [
+            results
+        ]
+
+
+    # ==================================================
     # Process Once
     # ==================================================
 
@@ -76,6 +131,41 @@ class RetryManager:
         self,
         limit: int = 10,
     ):
+
+        # --------------------------------------------------
+        # Production cycle processor
+        #
+        # RuntimeAdapter will use this mode.
+        #
+        # The processor can create a fresh SQLAlchemy
+        # session for this single cycle and close it before
+        # returning.
+        # --------------------------------------------------
+
+        if self.cycle_processor is not None:
+
+            results = (
+                self.cycle_processor(
+                    limit=limit
+                )
+            )
+
+            results = (
+                self._normalize_results(
+                    results
+                )
+            )
+
+            self._last_results = list(
+                results
+            )
+
+            return results
+
+
+        # --------------------------------------------------
+        # Legacy scanner / worker mode
+        # --------------------------------------------------
 
         queued_tasks = (
             self.scanner.scan_once(
@@ -102,8 +192,7 @@ class RetryManager:
             except Exception as exc:
 
                 # ------------------------------------------
-                # One retry must not prevent the manager
-                # from processing the remaining retry tasks.
+                # One retry must not stop remaining retries.
                 # ------------------------------------------
 
                 results.append(
@@ -115,7 +204,7 @@ class RetryManager:
                 )
 
 
-        self._last_results = (
+        self._last_results = list(
             results
         )
 
@@ -141,8 +230,7 @@ class RetryManager:
 
                 # ------------------------------------------
                 # The background manager must remain alive
-                # even if scanning itself encounters an
-                # unexpected infrastructure error.
+                # after an unexpected infrastructure error.
                 # ------------------------------------------
 
                 self._last_error = (
@@ -151,20 +239,14 @@ class RetryManager:
 
 
             # ----------------------------------------------
-            # Event.wait() is preferable to time.sleep().
-            #
-            # It allows stop() to wake the loop immediately
-            # instead of waiting for the entire interval.
+            # Event.wait() allows stop() to wake this
+            # thread immediately.
             # ----------------------------------------------
 
             self._stop_event.wait(
                 self.poll_interval
             )
 
-
-        # ----------------------------------------------
-        # Background loop has exited.
-        # ----------------------------------------------
 
         with self._lifecycle_lock:
 
@@ -181,13 +263,10 @@ class RetryManager:
 
         with self._lifecycle_lock:
 
-            # ------------------------------------------
-            # Already running.
-            # ------------------------------------------
-
             if (
                 self._thread is not None
-                and self._thread.is_alive()
+                and
+                self._thread.is_alive()
             ):
 
                 self._running = True
@@ -195,24 +274,18 @@ class RetryManager:
                 return False
 
 
-            # ------------------------------------------
-            # Reset lifecycle state.
-            # ------------------------------------------
-
             self._stop_event.clear()
 
             self._last_error = None
 
 
-            # ------------------------------------------
-            # Create background thread.
-            # ------------------------------------------
-
             self._thread = threading.Thread(
 
                 target=self._run_loop,
 
-                name="etm-retry-manager",
+                name=(
+                    "etm-retry-manager"
+                ),
 
                 daemon=True,
 
@@ -220,7 +293,6 @@ class RetryManager:
 
 
             self._running = True
-
 
             self._thread.start()
 
@@ -241,9 +313,11 @@ class RetryManager:
 
             thread = self._thread
 
+
             if (
                 thread is None
-                or not thread.is_alive()
+                or
+                not thread.is_alive()
             ):
 
                 self._running = False
@@ -253,18 +327,13 @@ class RetryManager:
                 return False
 
 
-            # ------------------------------------------
-            # Signal the background loop.
-            # ------------------------------------------
-
             self._stop_event.set()
 
 
         # --------------------------------------------------
-        # Wait OUTSIDE the lifecycle lock.
+        # Wait outside lifecycle lock.
         #
-        # This prevents deadlock because _run_loop()
-        # acquires the same lock when it exits.
+        # _run_loop() acquires this lock when it exits.
         # --------------------------------------------------
 
         thread.join(
@@ -281,11 +350,6 @@ class RetryManager:
 
             if thread.is_alive():
 
-                # --------------------------------------
-                # The thread did not stop within the
-                # requested timeout.
-                # --------------------------------------
-
                 self._running = True
 
                 return False
@@ -294,6 +358,7 @@ class RetryManager:
             self._running = False
 
             self._thread = None
+
 
             return True
 
@@ -310,8 +375,10 @@ class RetryManager:
 
             return bool(
                 self._running
-                and self._thread is not None
-                and self._thread.is_alive()
+                and
+                self._thread is not None
+                and
+                self._thread.is_alive()
             )
 
 

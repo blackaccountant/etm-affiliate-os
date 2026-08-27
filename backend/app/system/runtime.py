@@ -2,12 +2,18 @@
 Runtime Adapter
 
 Shared runtime bridge for Mission Control.
+
+Retry database resources are created per processing cycle.
+No SQLAlchemy Session is shared across the lifetime of the
+application or across application/background threads.
 """
 
 from app.memory.memory_bus import MemoryBus
 from app.task_queue.queue import TaskQueue
+
 from app.system.history import ExecutionHistory
 from app.system.event_monitor import EventMonitor
+
 from app.workforce.manager import WorkforceManager
 
 from app.scheduler.scheduler import Scheduler
@@ -54,86 +60,230 @@ class RuntimeAdapter:
         # ==================================================
         # Retry Infrastructure
         # ==================================================
-
-        self.scheduler = Scheduler()
-
-
-        # --------------------------------------------------
-        # Database Session
-        # --------------------------------------------------
-
-        self.db = SessionLocal()
-
-
-        # --------------------------------------------------
-        # Execution Repository
-        # --------------------------------------------------
-
-        self.execution_repository = (
-            ExecutionRepository(
-                self.db
-            )
-        )
-
-
-        # --------------------------------------------------
-        # Execution Service
-        # --------------------------------------------------
-
-        self.execution_service = (
-            ExecutionService(
-                self.execution_repository
-            )
-        )
-
-
-        # --------------------------------------------------
-        # Retry Scanner
-        # --------------------------------------------------
-
-        self.retry_scanner = RetryScanner(
-            self.execution_service,
-            self.scheduler,
-        )
-
-
-        # --------------------------------------------------
-        # Retry Executor
         #
-        # This is the real TaskExecutor used by retries.
-        # It has both:
+        # IMPORTANT:
         #
-        #   1. RuntimeAdapter
-        #   2. PostgreSQL ExecutionService
+        # RuntimeAdapter intentionally does NOT create a
+        # long-lived SQLAlchemy Session here.
         #
-        # This ensures retry executions follow the same
-        # persistence path as normal executions.
-        # --------------------------------------------------
-
-        self.retry_executor = TaskExecutor(
-            runtime=self,
-            execution_service=self.execution_service,
-        )
-
-
-        # --------------------------------------------------
-        # Retry Worker
-        # --------------------------------------------------
-
-        self.retry_worker = RetryWorker(
-            self.scheduler,
-            self.retry_executor,
-        )
-
-
-        # --------------------------------------------------
-        # Retry Manager
-        # --------------------------------------------------
+        # RetryManager invokes _process_retry_cycle().
+        #
+        # Every invocation creates:
+        #
+        #   SessionLocal
+        #       ↓
+        #   ExecutionRepository
+        #       ↓
+        #   ExecutionService
+        #       ↓
+        #   RetryScanner
+        #       ↓
+        #   TaskExecutor
+        #       ↓
+        #   RetryWorker
+        #
+        # The session is closed before the cycle returns.
+        # ==================================================
 
         self.retry_manager = RetryManager(
-            self.retry_scanner,
-            self.retry_worker,
+            cycle_processor=(
+                self._process_retry_cycle
+            )
         )
+
+
+    # ==================================================
+    # Retry Processing Cycle
+    # ==================================================
+
+    def _process_retry_cycle(
+        self,
+        limit: int = 10,
+    ):
+        """
+        Execute one isolated retry-processing cycle.
+
+        A fresh SQLAlchemy session is created for this
+        cycle and is always closed before returning.
+
+        This prevents SQLAlchemy Session objects from
+        being shared between FastAPI/application threads
+        and the retry manager background thread.
+        """
+
+        db = SessionLocal()
+
+
+        try:
+
+            # ==============================================
+            # Repository
+            # ==============================================
+
+            execution_repository = (
+                ExecutionRepository(
+                    db
+                )
+            )
+
+
+            # ==============================================
+            # Service
+            # ==============================================
+
+            execution_service = (
+                ExecutionService(
+                    execution_repository
+                )
+            )
+
+
+            # ==============================================
+            # Per-Cycle Scheduler
+            # ==============================================
+
+            scheduler = Scheduler()
+
+
+            # ==============================================
+            # Scanner
+            # ==============================================
+
+            retry_scanner = RetryScanner(
+                execution_service=(
+                    execution_service
+                ),
+                scheduler=scheduler,
+            )
+
+
+            # ==============================================
+            # Executor
+            # ==============================================
+
+            retry_executor = TaskExecutor(
+                runtime=self,
+                execution_service=(
+                    execution_service
+                ),
+            )
+
+
+            # ==============================================
+            # Worker
+            # ==============================================
+
+            retry_worker = RetryWorker(
+                scheduler=scheduler,
+                executor=retry_executor,
+            )
+
+
+            # ==============================================
+            # Scan / Atomic Claim
+            # ==============================================
+
+            queued_tasks = (
+                retry_scanner.scan_once(
+                    limit=limit
+                )
+            )
+
+
+            results = []
+
+
+            # ==============================================
+            # Execute Claimed Tasks
+            # ==============================================
+
+            for _ in queued_tasks:
+
+                try:
+
+                    result = (
+                        retry_worker.process_once()
+                    )
+
+                    results.append(
+                        result
+                    )
+
+
+                except Exception as exc:
+
+                    # --------------------------------------
+                    # Protect the rest of this retry batch.
+                    #
+                    # An unexpected infrastructure error
+                    # may leave the current transaction in
+                    # an unusable state.
+                    # --------------------------------------
+
+                    try:
+
+                        db.rollback()
+
+                    except Exception:
+
+                        pass
+
+
+                    results.append(
+                        None
+                    )
+
+
+                    # --------------------------------------
+                    # Record operational failure without
+                    # terminating the retry manager.
+                    # --------------------------------------
+
+                    try:
+
+                        self.record_event(
+                            "Retry worker cycle error",
+                            event_type="ERROR",
+                            metadata={
+                                "error": str(
+                                    exc
+                                )
+                            },
+                        )
+
+                    except Exception:
+
+                        pass
+
+
+            return results
+
+
+        except Exception:
+
+            # ==============================================
+            # Cycle-Level Failure
+            # ==============================================
+
+            try:
+
+                db.rollback()
+
+            except Exception:
+
+                pass
+
+
+            raise
+
+
+        finally:
+
+            # ==============================================
+            # ALWAYS release SQLAlchemy session
+            # ==============================================
+
+            db.close()
 
 
     # ==================================================
@@ -165,7 +315,8 @@ class RuntimeAdapter:
 
         return {
 
-            "pending": self.queue.size(),
+            "pending":
+                self.queue.size(),
 
             "running": 0,
 
@@ -302,7 +453,9 @@ class RuntimeAdapter:
         self,
     ):
 
-        return self.retry_manager.process_once()
+        return (
+            self.retry_manager.process_once()
+        )
 
 
     # ==================================================
@@ -313,7 +466,9 @@ class RuntimeAdapter:
         self,
     ):
 
-        return self.retry_manager.start()
+        return (
+            self.retry_manager.start()
+        )
 
 
     def stop_retry_manager(
@@ -321,8 +476,10 @@ class RuntimeAdapter:
         timeout=10.0,
     ):
 
-        return self.retry_manager.stop(
-            timeout=timeout
+        return (
+            self.retry_manager.stop(
+                timeout=timeout
+            )
         )
 
 
@@ -330,7 +487,9 @@ class RuntimeAdapter:
         self,
     ):
 
-        return self.retry_manager.is_running()
+        return (
+            self.retry_manager.is_running()
+        )
 
 
     # ==================================================
@@ -340,29 +499,16 @@ class RuntimeAdapter:
     def close(
         self,
     ):
+        """
+        Gracefully stop runtime background resources.
 
-        # --------------------------------------------------
-        # Stop retry manager first.
-        # --------------------------------------------------
+        There is no persistent database session to close.
+        Every retry cycle owns and closes its own session.
+        """
 
         try:
 
             self.stop_retry_manager()
-
-        except Exception:
-
-            pass
-
-
-        # --------------------------------------------------
-        # Close database session.
-        # --------------------------------------------------
-
-        try:
-
-            if self.db:
-
-                self.db.close()
 
         except Exception:
 
