@@ -5,7 +5,6 @@ Handles storing and retrieving workflow
 and mission execution history.
 """
 
-
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -13,13 +12,10 @@ from sqlalchemy.orm import Session
 from app.models.execution import Execution
 
 
-
 class ExecutionRepository:
     """
     Database access layer for executions.
     """
-
-
 
     def __init__(
         self,
@@ -28,6 +24,47 @@ class ExecutionRepository:
 
         self.db = db
 
+
+    # ==================================================
+    # UTC Helpers
+    # ==================================================
+
+    @staticmethod
+    def _utc_now():
+        """
+        Return the current timezone-aware UTC datetime.
+        """
+
+        return datetime.now(
+            timezone.utc
+        )
+
+
+    @staticmethod
+    def _normalize_utc(
+        value,
+    ):
+        """
+        Normalize datetime values to timezone-aware UTC.
+
+        Legacy naive values are interpreted as UTC.
+        """
+
+        if value is None:
+
+            return None
+
+
+        if value.tzinfo is None:
+
+            return value.replace(
+                tzinfo=timezone.utc
+            )
+
+
+        return value.astimezone(
+            timezone.utc
+        )
 
 
     # ==================================================
@@ -42,13 +79,13 @@ class ExecutionRepository:
         mission_name: str = None,
         worker_name: str = None,
         result_data: str = None,
+        input_data: str = None,
         retry_count: int = 0,
         max_retries: int = 3,
         next_retry_at=None,
         failure_type: str = None,
         error: str = None,
     ):
-
 
         execution = Execution(
 
@@ -64,19 +101,23 @@ class ExecutionRepository:
 
             result_data=result_data,
 
+            input_data=input_data,
+
             retry_count=retry_count,
 
             max_retries=max_retries,
 
-            next_retry_at=next_retry_at,
+            next_retry_at=(
+                self._normalize_utc(
+                    next_retry_at
+                )
+            ),
 
             failure_type=failure_type,
 
             error=error,
 
-            started_at=datetime.now(
-                timezone.utc
-            ),
+            started_at=self._utc_now(),
         )
 
 
@@ -94,7 +135,6 @@ class ExecutionRepository:
         return execution
 
 
-
     # ==================================================
     # Complete
     # ==================================================
@@ -106,11 +146,10 @@ class ExecutionRepository:
         result_data: str = None,
     ):
 
-
         execution.status = "COMPLETED"
 
         execution.completed_at = (
-            datetime.now(timezone.utc)
+            self._utc_now()
         )
 
         execution.duration = duration
@@ -139,7 +178,6 @@ class ExecutionRepository:
         return execution
 
 
-
     # ==================================================
     # Fail
     # ==================================================
@@ -153,25 +191,19 @@ class ExecutionRepository:
         retry_count: int = None,
     ):
 
-
         execution.status = "FAILED"
 
-
         execution.error = error
-
 
         execution.failure_type = (
             failure_type
         )
 
-
         execution.completed_at = (
-            datetime.now(timezone.utc)
+            self._utc_now()
         )
 
-
         execution.duration = duration
-
 
         execution.next_retry_at = None
 
@@ -185,14 +217,12 @@ class ExecutionRepository:
 
         self.db.commit()
 
-
         self.db.refresh(
             execution
         )
 
 
         return execution
-
 
 
     # ==================================================
@@ -209,16 +239,25 @@ class ExecutionRepository:
         error: str = None,
     ):
 
-
         execution.status = "QUEUED"
 
-        execution.retry_count = retry_count
+        execution.retry_count = (
+            retry_count
+        )
 
-        execution.max_retries = max_retries
+        execution.max_retries = (
+            max_retries
+        )
 
-        execution.next_retry_at = next_retry_at
+        execution.next_retry_at = (
+            self._normalize_utc(
+                next_retry_at
+            )
+        )
 
-        execution.failure_type = failure_type
+        execution.failure_type = (
+            failure_type
+        )
 
         execution.error = error
 
@@ -235,7 +274,6 @@ class ExecutionRepository:
         return execution
 
 
-
     # ==================================================
     # Claim Retry
     # ==================================================
@@ -246,33 +284,43 @@ class ExecutionRepository:
     ):
 
         updated = (
-            self.db.query(Execution)
-            .filter(
-                Execution.id == execution.id
+            self.db.query(
+                Execution
             )
             .filter(
-                Execution.status == "QUEUED"
+                Execution.id
+                ==
+                execution.id
+            )
+            .filter(
+                Execution.status
+                ==
+                "QUEUED"
             )
             .update(
                 {
-                    Execution.status: "RETRYING",
+                    Execution.status:
+                        "RETRYING",
                 },
                 synchronize_session=False,
             )
         )
 
+
         self.db.commit()
+
 
         if updated != 1:
 
             return None
 
+
         self.db.refresh(
             execution
         )
 
-        return execution
 
+        return execution
 
 
     # ==================================================
@@ -284,15 +332,17 @@ class ExecutionRepository:
         execution_id: int,
     ):
 
-
         return (
-            self.db.query(Execution)
+            self.db.query(
+                Execution
+            )
             .filter(
-                Execution.id == execution_id
+                Execution.id
+                ==
+                execution_id
             )
             .first()
         )
-
 
 
     # ==================================================
@@ -304,18 +354,20 @@ class ExecutionRepository:
         mission_id: str,
     ):
 
-
         return (
-            self.db.query(Execution)
+            self.db.query(
+                Execution
+            )
             .filter(
-                Execution.mission_id == mission_id
+                Execution.mission_id
+                ==
+                mission_id
             )
             .order_by(
                 Execution.id.desc()
             )
             .all()
         )
-
 
 
     # ==================================================
@@ -327,16 +379,18 @@ class ExecutionRepository:
         limit: int = 10,
     ):
 
-
         return (
-            self.db.query(Execution)
+            self.db.query(
+                Execution
+            )
             .order_by(
                 Execution.id.desc()
             )
-            .limit(limit)
+            .limit(
+                limit
+            )
             .all()
         )
-
 
 
     # ==================================================
@@ -351,24 +405,14 @@ class ExecutionRepository:
 
         if now is None:
 
-            now = datetime.now(
-                timezone.utc
+            now = self._utc_now()
+
+        else:
+
+            now = self._normalize_utc(
+                now
             )
 
-        # --------------------------------------------------
-        # PostgreSQL may return TIMESTAMP WITHOUT TIME ZONE
-        # as a naive datetime.
-        #
-        # Normalize UTC comparison so retry scanning does not
-        # fail because one datetime is aware and the other
-        # is naive.
-        # --------------------------------------------------
-
-        if now.tzinfo is not None:
-
-            now = now.replace(
-                tzinfo=None
-            )
 
         return (
             self.db.query(
@@ -376,7 +420,9 @@ class ExecutionRepository:
             )
 
             .filter(
-                Execution.status == "QUEUED"
+                Execution.status
+                ==
+                "QUEUED"
             )
 
             .filter(
@@ -387,11 +433,15 @@ class ExecutionRepository:
 
             .filter(
                 (
-                    Execution.next_retry_at == None
+                    Execution.next_retry_at
+                    ==
+                    None
                 )
                 |
                 (
-                    Execution.next_retry_at <= now
+                    Execution.next_retry_at
+                    <=
+                    now
                 )
             )
 
@@ -404,4 +454,4 @@ class ExecutionRepository:
             )
 
             .all()
-    )
+        )

@@ -7,7 +7,7 @@ and the immutable input snapshot
 required for durable retry replay.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column,
@@ -57,39 +57,48 @@ class Execution(Base):
         nullable=False,
     )
 
-    # --------------------------------------------------
-    # Workflow result
-    # --------------------------------------------------
+
+    # ==================================================
+    # Workflow Result
+    # ==================================================
 
     result_data = Column(
         Text,
         nullable=True,
     )
 
-    # --------------------------------------------------
-    # Immutable execution input snapshot
-    #
-    # Stores the original Task.payload so a retry can
-    # reconstruct the execution without depending on
-    # the original in-memory Mission or Task object.
-    # --------------------------------------------------
+
+    # ==================================================
+    # Durable Input Snapshot
+    # ==================================================
 
     input_data = Column(
         Text,
         nullable=True,
     )
 
-    # --------------------------------------------------
+
+    # ==================================================
     # Timing
-    # --------------------------------------------------
+    # ==================================================
+    #
+    # All persisted execution timestamps use
+    # timezone-aware UTC.
+    # ==================================================
 
     started_at = Column(
-        DateTime,
-        default=datetime.utcnow,
+        DateTime(
+            timezone=True
+        ),
+        default=lambda: datetime.now(
+            timezone.utc
+        ),
     )
 
     completed_at = Column(
-        DateTime,
+        DateTime(
+            timezone=True
+        ),
         nullable=True,
     )
 
@@ -98,9 +107,10 @@ class Execution(Base):
         default=0.0,
     )
 
-    # --------------------------------------------------
-    # Retry state
-    # --------------------------------------------------
+
+    # ==================================================
+    # Retry State
+    # ==================================================
 
     retry_count = Column(
         Integer,
@@ -113,7 +123,9 @@ class Execution(Base):
     )
 
     next_retry_at = Column(
-        DateTime,
+        DateTime(
+            timezone=True
+        ),
         nullable=True,
     )
 

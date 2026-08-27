@@ -5,7 +5,11 @@ Controls whether failed tasks retry
 and calculates retry timing.
 """
 
-from datetime import datetime, timedelta
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
 
 
 class RetryPolicy:
@@ -16,7 +20,9 @@ class RetryPolicy:
         base_delay_seconds: int = 30,
     ):
 
-        self.max_attempts = max_attempts
+        self.max_attempts = (
+            max_attempts
+        )
 
         self.base_delay_seconds = (
             base_delay_seconds
@@ -63,7 +69,9 @@ class RetryPolicy:
 
 
         return (
-            datetime.utcnow()
+            datetime.now(
+                timezone.utc
+            )
             +
             timedelta(
                 seconds=delay
@@ -92,7 +100,7 @@ class RetryPolicy:
 
 
         # ----------------------------------------------
-        # Perform retry
+        # Consume retry
         # ----------------------------------------------
 
         task.retry()
@@ -103,15 +111,13 @@ class RetryPolicy:
         #
         # Example:
         #
-        # 2 / 3
-        #   ↓
-        # retry()
-        #   ↓
-        # 3 / 3
+        #     2 / 3
+        #       ↓
+        #     retry()
+        #       ↓
+        #     3 / 3
         #
         # There is no retry remaining.
-        # Return False so Executor enters
-        # permanent failure handling.
         # ----------------------------------------------
 
         if not self.should_retry(
@@ -122,7 +128,7 @@ class RetryPolicy:
 
 
         # ----------------------------------------------
-        # More retries remain.
+        # Additional retry remains
         # ----------------------------------------------
 
         return True
