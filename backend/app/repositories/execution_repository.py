@@ -150,27 +150,41 @@ class ExecutionRepository:
         error: str,
         failure_type: str = None,
         duration: float = 0.0,
+        retry_count: int = None,
     ):
 
 
         execution.status = "FAILED"
 
+
         execution.error = error
+
 
         execution.failure_type = (
             failure_type
         )
 
+
         execution.completed_at = (
             datetime.now(timezone.utc)
         )
 
+
         execution.duration = duration
+
 
         execution.next_retry_at = None
 
 
+        if retry_count is not None:
+
+            execution.retry_count = (
+                retry_count
+            )
+
+
         self.db.commit()
+
 
         self.db.refresh(
             execution
@@ -231,15 +245,31 @@ class ExecutionRepository:
         execution: Execution,
     ):
 
-        execution.status = "RETRYING"
-
+        updated = (
+            self.db.query(Execution)
+            .filter(
+                Execution.id == execution.id
+            )
+            .filter(
+                Execution.status == "QUEUED"
+            )
+            .update(
+                {
+                    Execution.status: "RETRYING",
+                },
+                synchronize_session=False,
+            )
+        )
 
         self.db.commit()
+
+        if updated != 1:
+
+            return None
 
         self.db.refresh(
             execution
         )
-
 
         return execution
 
@@ -319,16 +349,31 @@ class ExecutionRepository:
         limit: int = 10,
     ):
 
-
         if now is None:
 
             now = datetime.now(
                 timezone.utc
             )
 
+        # --------------------------------------------------
+        # PostgreSQL may return TIMESTAMP WITHOUT TIME ZONE
+        # as a naive datetime.
+        #
+        # Normalize UTC comparison so retry scanning does not
+        # fail because one datetime is aware and the other
+        # is naive.
+        # --------------------------------------------------
+
+        if now.tzinfo is not None:
+
+            now = now.replace(
+                tzinfo=None
+            )
 
         return (
-            self.db.query(Execution)
+            self.db.query(
+                Execution
+            )
 
             .filter(
                 Execution.status == "QUEUED"
@@ -354,7 +399,9 @@ class ExecutionRepository:
                 Execution.id.asc()
             )
 
-            .limit(limit)
+            .limit(
+                limit
+            )
 
             .all()
-        )
+    )

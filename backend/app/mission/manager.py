@@ -485,6 +485,11 @@ class MissionManager:
                     default=str,
                 ),
 
+                input_data=json.dumps(
+                    task.payload,
+                    default=str,
+                ),
+
                 started_at=started_at,
 
                 completed_at=(

@@ -10,9 +10,13 @@ import app.models  # noqa: F401
 
 config = context.config
 
+# Alembic's ConfigParser treats '%' as interpolation syntax.
+# Escape percent signs so SQLAlchemy receives the original URL.
+alembic_database_url = settings.DATABASE_URL.replace("%", "%%")
+
 config.set_main_option(
     "sqlalchemy.url",
-    settings.DATABASE_URL,
+    alembic_database_url,
 )
 
 if config.config_file_name is not None:
@@ -23,8 +27,6 @@ target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in offline mode."""
-
     url = config.get_main_option("sqlalchemy.url")
 
     context.configure(
@@ -40,8 +42,6 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in online mode."""
-
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

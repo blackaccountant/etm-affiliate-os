@@ -1,19 +1,32 @@
 """
 Affiliate Intelligence Scoring Engine
 
-Combines the base affiliate analysis with the results
-of the Affiliate Discovery Service.
+Combines commercial opportunity scoring with
+affiliate discovery evidence.
 
 The scoring engine remains deterministic.
 
-Discovery evidence can strengthen the score when an
-affiliate program, commission structure, cookie window,
-or affiliate platform has been verified.
+Architecture:
+
+1. AffiliateRules
+   -> commercial attractiveness
+
+2. AffiliateDiscoveryService
+   -> affiliate monetization evidence
+
+3. AffiliateScoringEngine
+   -> combined opportunity score
+
+Discovery evidence is not allowed to double-count
+commercial signals.
 """
 
 from __future__ import annotations
 
-from app.intelligence.models import IntelligenceResult
+from app.intelligence.models import (
+    IntelligenceReason,
+    IntelligenceResult,
+)
 from app.intelligence.rules import AffiliateRules
 from app.intelligence.weights import (
     GRADE_A,
@@ -27,12 +40,16 @@ from app.schemas.affiliate_analysis import AffiliateAnalysis
 class AffiliateScoringEngine:
     """
     Scores affiliate opportunities using deterministic
-    business rules plus verified affiliate discovery data.
+    commercial rules plus verified affiliate discovery
+    evidence.
     """
 
     def __init__(self):
-
         self.rules = AffiliateRules()
+
+    # ======================================================
+    # PUBLIC SCORING
+    # ======================================================
 
     def score(
         self,
@@ -42,28 +59,15 @@ class AffiliateScoringEngine:
         """
         Score an affiliate opportunity.
 
-        Parameters
-        ----------
-        analysis:
-            Structured product/company analysis.
+        Commercial attractiveness is calculated from
+        AffiliateRules.
 
-        discovery:
-            Optional result from AffiliateDiscoveryService.
-
-        Discovery can contain fields such as:
-
-            affiliate_program_found
-            affiliate_program_likely
-            commission_type
-            commission_estimate
-            cookie_window
-            affiliate_platform
-            confidence
-            evidence
+        Affiliate-program and monetization evidence
+        is calculated from discovery data.
         """
 
         # ==================================================
-        # STEP 1 — BASE ANALYSIS RULES
+        # STEP 1 — COMMERCIAL RULES
         # ==================================================
 
         reasons = list(
@@ -73,11 +77,10 @@ class AffiliateScoringEngine:
         )
 
         # ==================================================
-        # STEP 2 — AFFILIATE DISCOVERY SIGNALS
+        # STEP 2 — DISCOVERY SIGNALS
         # ==================================================
 
         if discovery is not None:
-
             self._apply_discovery_signals(
                 reasons,
                 discovery,
@@ -92,7 +95,6 @@ class AffiliateScoringEngine:
             for reason in reasons
         )
 
-        # Keep score within 0-100.
         score = max(
             min(total, 100),
             0,
@@ -103,66 +105,28 @@ class AffiliateScoringEngine:
         # ==================================================
 
         if score >= GRADE_A:
-
             grade = "A"
 
         elif score >= GRADE_B:
-
             grade = "B"
 
         elif score >= GRADE_C:
-
             grade = "C"
 
         elif score >= GRADE_D:
-
             grade = "D"
 
         else:
-
             grade = "F"
 
         # ==================================================
         # STEP 5 — CONFIDENCE
         # ==================================================
 
-        positive_reasons = sum(
-            1
-            for reason in reasons
-            if reason.points > 0
+        confidence = self._calculate_confidence(
+            reasons,
+            discovery,
         )
-
-        negative_reasons = sum(
-            1
-            for reason in reasons
-            if reason.points < 0
-        )
-
-        confidence = min(
-            50
-            + (positive_reasons * 10)
-            + (negative_reasons * 5),
-            100,
-        )
-
-        # Verified discovery data should increase
-        # confidence because the system has direct
-        # evidence rather than inference alone.
-
-        if discovery is not None:
-
-            discovery_confidence = self._safe_int(
-                discovery.get(
-                    "confidence"
-                )
-            )
-
-            if discovery_confidence >= 90:
-
-                confidence = min(
-                    confidence + 10,
-                    100,
-                )
 
         # ==================================================
         # STEP 6 — RECOMMENDATION
@@ -172,15 +136,9 @@ class AffiliateScoringEngine:
             analysis.recommendation
         )
 
-        # If the discovery engine has actually confirmed
-        # an affiliate program, don't allow the old AI
-        # analysis text to incorrectly claim that the
-        # program is unknown.
-
         if self._program_verified(
             discovery
         ):
-
             recommendation = (
                 self._build_verified_recommendation(
                     analysis,
@@ -203,30 +161,35 @@ class AffiliateScoringEngine:
 
     def _apply_discovery_signals(
         self,
-        reasons,
+        reasons: list[IntelligenceReason],
         discovery: dict,
-    ):
+    ) -> None:
         """
-        Convert verified affiliate discovery data into
+        Convert affiliate discovery evidence into
         deterministic scoring signals.
+
+        Only meaningful positive discovery signals
+        are added.
+
+        Unknown information does not generate a
+        zero-point reason.
         """
 
         # --------------------------------------------------
-        # Affiliate program confirmed
+        # Affiliate Program
         # --------------------------------------------------
 
         if self._program_verified(
             discovery
         ):
-
             reasons.append(
                 self._reason(
                     "Affiliate Program Verified",
                     20,
                     (
-                        "An affiliate program was "
-                        "identified and supported by "
-                        "website evidence."
+                        "Website research provides "
+                        "strong evidence supporting "
+                        "an affiliate program."
                     ),
                 )
             )
@@ -234,28 +197,14 @@ class AffiliateScoringEngine:
         elif self._program_likely(
             discovery
         ):
-
             reasons.append(
                 self._reason(
                     "Affiliate Program Likely",
-                    10,
+                    8,
                     (
-                        "Website research indicates "
-                        "a likely affiliate program, "
+                        "Website research suggests "
+                        "an affiliate opportunity, "
                         "but verification is incomplete."
-                    ),
-                )
-            )
-
-        else:
-
-            reasons.append(
-                self._reason(
-                    "Affiliate Program Requires Verification",
-                    0,
-                    (
-                        "Affiliate-program availability "
-                        "could not be verified."
                     ),
                 )
             )
@@ -286,14 +235,9 @@ class AffiliateScoringEngine:
         if self._commission_verified(
             discovery
         ):
-
             commission_points = 15
 
-            if (
-                "recurring"
-                in commission_text
-            ):
-
+            if "recurring" in commission_text:
                 commission_points = 20
 
             reasons.append(
@@ -301,28 +245,15 @@ class AffiliateScoringEngine:
                     "Commission Verified",
                     commission_points,
                     (
-                        "The affiliate discovery "
-                        "evidence contains commission "
+                        "Affiliate discovery evidence "
+                        "contains identifiable commission "
                         "information."
                     ),
                 )
             )
 
-        else:
-
-            reasons.append(
-                self._reason(
-                    "Commission Requires Verification",
-                    0,
-                    (
-                        "Affiliate commission information "
-                        "has not been confirmed."
-                    ),
-                )
-            )
-
         # --------------------------------------------------
-        # Cookie window
+        # Cookie Window
         # --------------------------------------------------
 
         cookie_window = str(
@@ -337,7 +268,6 @@ class AffiliateScoringEngine:
         )
 
         if cookie_days >= 180:
-
             reasons.append(
                 self._reason(
                     "Long Cookie Window",
@@ -350,7 +280,6 @@ class AffiliateScoringEngine:
             )
 
         elif cookie_days >= 90:
-
             reasons.append(
                 self._reason(
                     "Strong Cookie Window",
@@ -363,7 +292,6 @@ class AffiliateScoringEngine:
             )
 
         elif cookie_days > 0:
-
             reasons.append(
                 self._reason(
                     "Cookie Window Verified",
@@ -376,7 +304,7 @@ class AffiliateScoringEngine:
             )
 
         # --------------------------------------------------
-        # Affiliate platform
+        # Affiliate Platform
         # --------------------------------------------------
 
         platform = str(
@@ -386,8 +314,11 @@ class AffiliateScoringEngine:
             )
         ).strip()
 
-        if platform:
-
+        if platform and platform.lower() not in {
+            "unknown",
+            "none",
+            "n/a",
+        }:
             reasons.append(
                 self._reason(
                     "Affiliate Platform Identified",
@@ -400,6 +331,153 @@ class AffiliateScoringEngine:
             )
 
     # ======================================================
+    # CONFIDENCE
+    # ======================================================
+
+    def _calculate_confidence(
+        self,
+        reasons: list[IntelligenceReason],
+        discovery: dict | None,
+    ) -> int:
+        """
+        Calculate confidence from evidence quality.
+
+        Confidence is intentionally separate from
+        opportunity score.
+
+        A high score with weak evidence can therefore
+        have lower confidence.
+        """
+
+        commercial_reasons = [
+            reason
+            for reason in reasons
+            if reason.title
+            not in {
+                "Affiliate Program Verified",
+                "Affiliate Program Likely",
+                "Commission Verified",
+                "Long Cookie Window",
+                "Strong Cookie Window",
+                "Cookie Window Verified",
+                "Affiliate Platform Identified",
+            }
+        ]
+
+        discovery_reasons = [
+            reason
+            for reason in reasons
+            if reason.title
+            in {
+                "Affiliate Program Verified",
+                "Affiliate Program Likely",
+                "Commission Verified",
+                "Long Cookie Window",
+                "Strong Cookie Window",
+                "Cookie Window Verified",
+                "Affiliate Platform Identified",
+            }
+        ]
+
+        # --------------------------------------------------
+        # Commercial evidence
+        # --------------------------------------------------
+
+        commercial_count = len(
+            commercial_reasons
+        )
+
+        if commercial_count == 0:
+            commercial_confidence = 30
+
+        elif commercial_count == 1:
+            commercial_confidence = 40
+
+        elif commercial_count == 2:
+            commercial_confidence = 50
+
+        elif commercial_count == 3:
+            commercial_confidence = 60
+
+        elif commercial_count == 4:
+            commercial_confidence = 65
+
+        else:
+            commercial_confidence = 70
+
+        # --------------------------------------------------
+        # Discovery evidence
+        # --------------------------------------------------
+
+        discovery_confidence = 0
+
+        if discovery is not None:
+
+            raw_discovery_confidence = (
+                self._safe_int(
+                    discovery.get(
+                        "confidence"
+                    )
+                )
+            )
+
+            discovery_confidence = max(
+                min(
+                    raw_discovery_confidence,
+                    100,
+                ),
+                0,
+            )
+
+        # --------------------------------------------------
+        # Combine evidence
+        # --------------------------------------------------
+
+        if discovery is None:
+            confidence = commercial_confidence
+
+        elif discovery_confidence == 0:
+            confidence = min(
+                commercial_confidence,
+                70,
+            )
+
+        elif discovery_confidence < 60:
+            confidence = round(
+                (
+                    commercial_confidence * 0.70
+                )
+                + (
+                    discovery_confidence * 0.30
+                )
+            )
+
+        else:
+            confidence = round(
+                (
+                    commercial_confidence * 0.50
+                )
+                + (
+                    discovery_confidence * 0.50
+                )
+            )
+
+        # Discovery evidence should provide a small
+        # additional boost when multiple independent
+        # signals exist.
+
+        if len(discovery_reasons) >= 2:
+            confidence += 5
+
+        elif len(discovery_reasons) >= 4:
+            confidence += 10
+
+        return max(
+            min(confidence, 100),
+            0,
+        )
+
+    # ======================================================
     # PROGRAM CHECKS
     # ======================================================
 
@@ -407,9 +485,12 @@ class AffiliateScoringEngine:
     def _program_verified(
         discovery: dict | None,
     ) -> bool:
+        """
+        Determine whether discovery provides strong
+        affiliate-program verification.
+        """
 
         if not discovery:
-
             return False
 
         found = discovery.get(
@@ -435,8 +516,15 @@ class AffiliateScoringEngine:
 
     @staticmethod
     def _program_likely(
-        discovery: dict,
+        discovery: dict | None,
     ) -> bool:
+        """
+        Determine whether discovery suggests an
+        affiliate program without full verification.
+        """
+
+        if not discovery:
+            return False
 
         likely = str(
             discovery.get(
@@ -446,7 +534,6 @@ class AffiliateScoringEngine:
         ).strip().lower()
 
         return likely in {
-            "yes",
             "likely",
             "probable",
         }
@@ -457,25 +544,28 @@ class AffiliateScoringEngine:
 
     @staticmethod
     def _commission_verified(
-        discovery: dict,
+        discovery: dict | None,
     ) -> bool:
+        """
+        Determine whether commission information
+        has been identified.
+        """
+
+        if not discovery:
+            return False
 
         values = [
-
             discovery.get(
                 "commission_type"
             ),
-
             discovery.get(
                 "commission_estimate"
             ),
-
         ]
 
         for value in values:
 
             if value is None:
-
                 continue
 
             text = str(
@@ -483,7 +573,6 @@ class AffiliateScoringEngine:
             ).strip().lower()
 
             if not text:
-
                 continue
 
             if text in {
@@ -493,14 +582,9 @@ class AffiliateScoringEngine:
                 "not specified",
                 "not available",
             }:
-
                 continue
 
             return True
-
-        # Also inspect evidence because the discovery
-        # service may have found commission information
-        # but not yet normalized it into the fields.
 
         evidence = discovery.get(
             "evidence",
@@ -511,7 +595,6 @@ class AffiliateScoringEngine:
             evidence,
             list,
         ):
-
             combined = " ".join(
                 str(item)
                 for item in evidence
@@ -524,11 +607,10 @@ class AffiliateScoringEngine:
                 "payout",
             )
 
-            for term in commission_terms:
-
-                if term in combined:
-
-                    return True
+            return any(
+                term in combined
+                for term in commission_terms
+            )
 
         return False
 
@@ -541,6 +623,10 @@ class AffiliateScoringEngine:
         analysis: AffiliateAnalysis,
         discovery: dict,
     ) -> str:
+        """
+        Build a recommendation based on verified
+        affiliate discovery evidence.
+        """
 
         company = (
             analysis.company
@@ -577,28 +663,59 @@ class AffiliateScoringEngine:
 
         details = []
 
-        if commission:
+        if (
+            commission
+            and commission.lower()
+            not in {
+                "unknown",
+                "none",
+                "n/a",
+            }
+        ):
             details.append(
                 f"commission: {commission}"
             )
 
-        elif commission_type:
+        elif (
+            commission_type
+            and commission_type.lower()
+            not in {
+                "unknown",
+                "none",
+                "n/a",
+            }
+        ):
             details.append(
                 f"commission type: {commission_type}"
             )
 
-        if cookie_window:
+        if (
+            cookie_window
+            and cookie_window.lower()
+            not in {
+                "unknown",
+                "none",
+                "n/a",
+            }
+        ):
             details.append(
                 f"cookie window: {cookie_window}"
             )
 
-        if platform:
+        if (
+            platform
+            and platform.lower()
+            not in {
+                "unknown",
+                "none",
+                "n/a",
+            }
+        ):
             details.append(
                 f"platform: {platform}"
             )
 
         if details:
-
             detail_text = (
                 "; ".join(details)
             )
@@ -629,15 +746,10 @@ class AffiliateScoringEngine:
         title: str,
         points: int,
         description: str,
-    ):
+    ) -> IntelligenceReason:
         """
-        Create a scoring reason using the same structure
-        expected by IntelligenceResult.
+        Create an IntelligenceReason.
         """
-
-        # Import locally so this scoring module remains
-        # compatible with the existing rules implementation.
-        from app.intelligence.models import IntelligenceReason
 
         return IntelligenceReason(
             title=title,
@@ -649,9 +761,7 @@ class AffiliateScoringEngine:
     def _safe_int(
         value,
     ) -> int:
-
         try:
-
             return int(
                 value
             )
@@ -660,14 +770,12 @@ class AffiliateScoringEngine:
             TypeError,
             ValueError,
         ):
-
             return 0
 
     @staticmethod
     def _extract_days(
         value: str,
     ) -> int:
-
         import re
 
         match = re.search(
@@ -676,15 +784,12 @@ class AffiliateScoringEngine:
         )
 
         if not match:
-
             return 0
 
         try:
-
             return int(
                 match.group(1)
             )
 
         except ValueError:
-
             return 0

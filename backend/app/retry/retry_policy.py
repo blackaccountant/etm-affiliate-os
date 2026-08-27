@@ -5,7 +5,7 @@ Controls whether failed tasks retry
 and calculates retry timing.
 """
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 
 
 class RetryPolicy:
@@ -23,6 +23,10 @@ class RetryPolicy:
         )
 
 
+    # ==================================================
+    # Retry Availability
+    # ==================================================
+
     def should_retry(
         self,
         task,
@@ -31,9 +35,16 @@ class RetryPolicy:
         return (
             task.retry_count
             <
-            self.max_attempts
+            min(
+                self.max_attempts,
+                task.max_retries,
+            )
         )
 
+
+    # ==================================================
+    # Retry Timing
+    # ==================================================
 
     def calculate_next_retry(
         self,
@@ -43,14 +54,16 @@ class RetryPolicy:
         delay = (
             self.base_delay_seconds
             *
-            (2 ** task.retry_count)
+            (
+                2
+                **
+                task.retry_count
+            )
         )
 
 
         return (
-            datetime.now(
-                timezone.utc
-            )
+            datetime.utcnow()
             +
             timedelta(
                 seconds=delay
@@ -58,15 +71,58 @@ class RetryPolicy:
         )
 
 
+    # ==================================================
+    # Execute Retry
+    # ==================================================
+
     def execute_retry(
         self,
         task,
     ):
 
-        if self.should_retry(task):
+        # ----------------------------------------------
+        # No retry available
+        # ----------------------------------------------
 
-            task.retry()
+        if not self.should_retry(
+            task
+        ):
 
-            return True
+            return False
 
-        return False
+
+        # ----------------------------------------------
+        # Perform retry
+        # ----------------------------------------------
+
+        task.retry()
+
+
+        # ----------------------------------------------
+        # Final retry has now been consumed.
+        #
+        # Example:
+        #
+        # 2 / 3
+        #   ↓
+        # retry()
+        #   ↓
+        # 3 / 3
+        #
+        # There is no retry remaining.
+        # Return False so Executor enters
+        # permanent failure handling.
+        # ----------------------------------------------
+
+        if not self.should_retry(
+            task
+        ):
+
+            return False
+
+
+        # ----------------------------------------------
+        # More retries remain.
+        # ----------------------------------------------
+
+        return True

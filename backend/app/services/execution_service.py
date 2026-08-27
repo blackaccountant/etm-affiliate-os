@@ -24,6 +24,36 @@ class ExecutionService:
 
         self.repository = repository
 
+    def complete(
+        self,
+        execution,
+        duration: float = 0.0,
+        result_data: str = None,
+    ):
+        return self.repository.complete(
+            execution=execution,
+            duration=duration,
+            result_data=result_data,
+        )
+
+
+    def fail(
+        self,
+        execution,
+        error: str,
+        failure_type: str = None,
+        duration: float = 0.0,
+        retry_count: int = None,
+    ):
+
+        return self.repository.fail(
+            execution=execution,
+            error=error,
+            failure_type=failure_type,
+            duration=duration,
+            retry_count=retry_count,
+        )
+
 
 
     # ==================================================

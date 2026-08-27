@@ -371,19 +371,44 @@ class AffiliateDiscoveryWorkflow:
 
                 data={
 
-                    "analysis": analysis,
+                    "analysis": (
+                        analysis.model_dump()
+                        if hasattr(analysis, "model_dump")
+                        else analysis
+                    ),
 
                     "discovery": discovery,
 
-                    "intelligence": intelligence,
+                    "intelligence": (
+                        intelligence.model_dump()
+                        if hasattr(intelligence, "model_dump")
+                        else intelligence
+                    ),
 
-                    "decision": decision,
+                    "decision": (
+                        decision.model_dump()
+                        if hasattr(decision, "model_dump")
+                        else decision
+                    ),
 
-                    "database": database,
+                    "database": (
+                        database.model_dump()
+                        if hasattr(database, "model_dump")
+                        else database
+                    ),
 
-                    "opportunity": opportunity,
+                    "opportunity": (
+                        opportunity.model_dump()
+                        if hasattr(opportunity, "model_dump")
+                        else opportunity
+                    ),
 
-                    "content_assets": content_assets,
+                    "content_assets": [
+                        asset.model_dump()
+                        if hasattr(asset, "model_dump")
+                        else asset
+                        for asset in content_assets
+                    ],
 
                 },
 

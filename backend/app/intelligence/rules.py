@@ -2,12 +2,16 @@
 Affiliate Intelligence Rules
 
 Deterministic business rules for evaluating
-affiliate opportunities.
+commercial attractiveness of affiliate opportunities.
 
 Important design principle:
 
-Unknown affiliate information is NOT treated as
-proof that an affiliate program does not exist.
+This layer evaluates the commercial attractiveness
+of the product itself.
+
+Affiliate-program verification and affiliate
+monetization evidence are handled by the
+Affiliate Discovery Service and Scoring Engine.
 
 The system separates:
 
@@ -25,8 +29,13 @@ from app.intelligence.weights import DEFAULT_WEIGHTS
 
 class AffiliateRules:
     """
-    Evaluates an AffiliateAnalysis and produces
-    explainable deterministic scoring reasons.
+    Evaluates commercial characteristics of an
+    AffiliateAnalysis and produces explainable,
+    deterministic scoring reasons.
+
+    Affiliate-program verification is intentionally
+    excluded from this layer to prevent duplicate
+    scoring when verified discovery data exists.
     """
 
     def evaluate(
@@ -48,46 +57,13 @@ class AffiliateRules:
             analysis.category or ""
         ).lower()
 
-        affiliate = (
-            analysis.affiliate_program_likely or ""
-        ).strip().lower()
-
         summary = (
             analysis.summary or ""
         ).lower()
 
-        commission = (
-            analysis.commission_estimate or ""
-        ).strip().lower()
-
         # ==================================================
-        # POSITIVE SIGNALS
+        # COMMERCIAL SIGNALS
         # ==================================================
-
-        # ------------------------------------------
-        # Official Affiliate Program
-        # ------------------------------------------
-
-        if affiliate in {
-            "yes",
-            "available",
-            "official",
-            "confirmed",
-        }:
-
-            reasons.append(
-                IntelligenceReason(
-                    title="Official Affiliate Program",
-                    points=(
-                        DEFAULT_WEIGHTS
-                        .official_affiliate_program
-                    ),
-                    description=(
-                        "A confirmed affiliate program "
-                        "reduces monetization uncertainty."
-                    ),
-                )
-            )
 
         # ------------------------------------------
         # Subscription Revenue
@@ -310,89 +286,6 @@ class AffiliateRules:
                     description=(
                         "Free entry points can reduce "
                         "conversion friction."
-                    ),
-                )
-            )
-
-        # ==================================================
-        # AFFILIATE VERIFICATION
-        # ==================================================
-
-        # IMPORTANT:
-        #
-        # Unknown does NOT receive a -20 penalty.
-        #
-        # Unknown means:
-        #
-        # "We don't have enough evidence yet."
-        #
-        # That should trigger a verification workflow,
-        # not destroy the commercial score.
-
-        if affiliate in {
-            "no",
-            "none",
-            "not available",
-            "no affiliate",
-            "no affiliate program",
-        }:
-
-            reasons.append(
-                IntelligenceReason(
-                    title="No Affiliate Program Confirmed",
-                    points=-25,
-                    description=(
-                        "The supplied evidence indicates "
-                        "that no usable affiliate program exists."
-                    ),
-                )
-            )
-
-        elif affiliate in {
-            "unknown",
-            "",
-            "uncertain",
-            "unclear",
-            "possible",
-            "likely",
-        }:
-
-            reasons.append(
-                IntelligenceReason(
-                    title="Affiliate Program Requires Verification",
-                    points=0,
-                    description=(
-                        "The supplied website content does not "
-                        "provide enough evidence to confirm an "
-                        "affiliate program. Further research is required."
-                    ),
-                )
-            )
-
-        # ==================================================
-        # COMMISSION TRANSPARENCY
-        # ==================================================
-
-        commission_unknown = (
-            not commission
-            or commission in {
-                "unknown",
-                "not publicly stated",
-                "not available",
-                "n/a",
-                "none",
-            }
-        )
-
-        if commission_unknown:
-
-            reasons.append(
-                IntelligenceReason(
-                    title="Commission Requires Verification",
-                    points=0,
-                    description=(
-                        "Affiliate payout information is not "
-                        "confirmed by the supplied website evidence."
                     ),
                 )
             )

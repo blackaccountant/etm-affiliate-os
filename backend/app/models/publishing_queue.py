@@ -4,6 +4,7 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
+    UniqueConstraint,
 )
 
 from sqlalchemy.orm import relationship
@@ -74,4 +75,13 @@ class PublishingQueue(Base):
     content_asset = relationship(
         "AffiliateContentAsset",
         back_populates="publishing_queue",
+    )
+
+
+    __table_args__ = (
+        UniqueConstraint(
+            "content_asset_id",
+            "channel",
+            name="uq_publishing_queue_asset_channel",
+        ),
     )
