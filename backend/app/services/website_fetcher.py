@@ -6,9 +6,18 @@ Downloads website content for AI workers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
+
+
+@dataclass(frozen=True)
+class FetchedWebsitePage:
+    """Successful fetch content with the HTTP provenance needed by research."""
+
+    content: str
+    http_status: int
 
 
 class WebsiteFetcher:
@@ -34,6 +43,14 @@ class WebsiteFetcher:
             None if the request fails.
         """
 
+        page = self.fetch_with_metadata(url)
+        return page.content if page else None
+
+    def fetch_with_metadata(
+        self,
+        url: str,
+    ) -> Optional[FetchedWebsitePage]:
+        """Download content while retaining status for page-level provenance."""
         headers = {
             "User-Agent": (
                 "ETM Affiliate OS/0.4 "
@@ -52,7 +69,10 @@ class WebsiteFetcher:
 
             response.raise_for_status()
 
-            return response.text
+            return FetchedWebsitePage(
+                content=response.text,
+                http_status=response.status_code,
+            )
 
         except Exception:
 

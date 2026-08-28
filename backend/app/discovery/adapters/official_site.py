@@ -60,10 +60,17 @@ class OfficialSiteDiscoveryAdapter:
             return None
         selected = self._select(claims)
         values = {key: claim.evidence.observed_value for key, claim in selected.items()}
-        best_page = max(pages, key=lambda page: (self._page_priority(page.url), page.url))
-        explicit_page = self._page_priority(best_page.url) > 0
-        extra = any(key in values for key in ("commission_percent", "commission_amount", "cookie_days", "affiliate_network", "affiliate_url"))
-        verified = bool(values.get("affiliate_program_exists")) and explicit_page and extra
+        program_claim = selected.get("affiliate_program_exists")
+        source_claim = program_claim if program_claim and program_claim.evidence.observed_value is True else self._strongest_selected_claim(selected)
+        if source_claim is None:
+            return None
+        source_url = source_claim.evidence.source_url
+        explicit_page = self._is_explicit_program_page(source_url)
+        same_page_claims = self._supporting_claims_for_source(selected, source_url)
+        verified = bool(program_claim and program_claim.evidence.observed_value is True) and explicit_page and any(
+            claim.evidence.claim_type in {"commission_percent", "commission_amount", "commission_model", "cookie_days", "affiliate_network", "affiliate_url"}
+            for claim in same_page_claims
+        )
         status = VerificationStatus.VERIFIED if verified else VerificationStatus.PARTIAL
         confidence = max(claim.evidence.confidence for claim in selected.values())
         network = values.get("affiliate_network")
@@ -71,7 +78,7 @@ class OfficialSiteDiscoveryAdapter:
         candidate = DiscoveryCandidateCreate(
             source_adapter=self.name,
             source_type=self.source_type,
-            source_url=best_page.url if explicit_page else source,
+            source_url=source_url,
             canonical_domain=domain,
             affiliate_network=network,
             affiliate_url=values.get("affiliate_url"),
@@ -97,6 +104,26 @@ class OfficialSiteDiscoveryAdapter:
     def _page_priority(url: str) -> int:
         path = urlparse(url).path.lower()
         return 2 if "affiliate" in path else 1 if any(word in path for word in ("partner", "referral")) else 0
+
+    @classmethod
+    def _is_explicit_program_page(cls, url: str) -> bool:
+        return cls._page_priority(url) > 0
+
+    @staticmethod
+    def _supporting_claims_for_source(selected: dict[str, _Claim], source_url: str) -> list[_Claim]:
+        return [
+            claim
+            for claim in selected.values()
+            if claim.evidence.source_url == source_url and claim.evidence.claim_type != "affiliate_program_exists"
+        ]
+
+    @classmethod
+    def _strongest_selected_claim(cls, selected: dict[str, _Claim]) -> _Claim | None:
+        return min(selected.values(), key=cls._claim_order_key, default=None)
+
+    @staticmethod
+    def _claim_order_key(claim: _Claim) -> tuple[int, int, str, str]:
+        return (-claim.evidence.confidence, -claim.page_priority, claim.evidence.source_url, claim.evidence.excerpt)
 
     def _claim(self, page: ResearchPage, claim_type: str, value: object, excerpt: str, confidence: int) -> _Claim:
         return _Claim(DiscoveryEvidence(claim_type, value, page.url, excerpt[:500], page.http_status, page.content_hash, confidence), self._page_priority(page.url))
@@ -143,9 +170,9 @@ class OfficialSiteDiscoveryAdapter:
         cpa = re.search(r"\bcpa\s+(?:([A-Z]{3})\s*)?[$]?([0-9]+(?:\.[0-9]+)?)", text, re.I)
         if cpa:
             return CommissionModel.CPA, Decimal(cpa.group(2)), None, cpa.group(0)
-        fixed = re.search(r"(?:([A-Z]{3})\s*)?[$]([0-9]+(?:\.[0-9]+)?)\s+commission per sale", text, re.I)
+        fixed = re.search(r"(?:(?:[A-Z]{3})\s+|[$])([0-9]+(?:\.[0-9]+)?)\s+commission per sale", text, re.I)
         if fixed:
-            return CommissionModel.FIXED, Decimal(fixed.group(2)), None, fixed.group(0)
+            return CommissionModel.FIXED, Decimal(fixed.group(1)), None, fixed.group(0)
         return None
 
     @staticmethod
@@ -163,6 +190,6 @@ class OfficialSiteDiscoveryAdapter:
         selected: dict[str, _Claim] = {}
         for claim in claims:
             current = selected.get(claim.evidence.claim_type)
-            if current is None or (-claim.evidence.confidence, -claim.page_priority, claim.evidence.source_url, claim.evidence.excerpt) < (-current.evidence.confidence, -current.page_priority, current.evidence.source_url, current.evidence.excerpt):
+            if current is None or OfficialSiteDiscoveryAdapter._claim_order_key(claim) < OfficialSiteDiscoveryAdapter._claim_order_key(current):
                 selected[claim.evidence.claim_type] = claim
         return selected

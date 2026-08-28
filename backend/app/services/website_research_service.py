@@ -321,6 +321,15 @@ class WebsiteResearchService:
             url
         )
 
+    def _fetch_page_with_provenance(self, url: str) -> tuple[str | None, int | None]:
+        fetch_with_metadata = getattr(self.fetcher, "fetch_with_metadata", None)
+        if callable(fetch_with_metadata):
+            page = fetch_with_metadata(url)
+            if page is None:
+                return None, None
+            return page.content, page.http_status
+        return self._fetch_page(url), None
+
     # ==========================================================
     # MAIN RESEARCH
     # ==========================================================
@@ -344,7 +353,7 @@ class WebsiteResearchService:
 
     def research_pages(self, url: str) -> list[ResearchPage]:
         """Return page-level research observations without breaking ``research`` callers."""
-        homepage_html = self._fetch_page(url)
+        homepage_html, homepage_status = self._fetch_page_with_provenance(url)
 
         if not homepage_html:
 
@@ -432,17 +441,11 @@ class WebsiteResearchService:
 
             if page_url == url:
 
-                html = (
-                    homepage_html
-                )
+                html, http_status = homepage_html, homepage_status
 
             else:
 
-                html = (
-                    self._fetch_page(
-                        page_url
-                    )
-                )
+                html, http_status = self._fetch_page_with_provenance(page_url)
 
             if not html:
                 continue
@@ -456,7 +459,7 @@ class WebsiteResearchService:
             if not text:
                 continue
 
-            research_pages.append(ResearchPage.from_content(page_url, text, http_status=200))
+            research_pages.append(ResearchPage.from_content(page_url, text, http_status=http_status))
 
         # ------------------------------------------------------
         # 4. Validate research result
