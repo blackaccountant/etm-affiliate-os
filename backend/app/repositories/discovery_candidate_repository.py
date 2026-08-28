@@ -45,6 +45,12 @@ class DiscoveryCandidateRepository:
     def list_by_run(self, run_id: str) -> list[DiscoveryCandidate]:
         return self.db.query(DiscoveryCandidate).filter(DiscoveryCandidate.run_id == run_id).order_by(DiscoveryCandidate.created_at.asc()).all()
 
+    def list_selected_by_run(self, run_id: str) -> list[DiscoveryCandidate]:
+        return self.db.query(DiscoveryCandidate).filter(
+            DiscoveryCandidate.run_id == run_id,
+            DiscoveryCandidate.disposition == CandidateDisposition.SELECTED.value,
+        ).order_by(DiscoveryCandidate.program_identity_key.asc(), DiscoveryCandidate.id.asc()).all()
+
     def list_with_evidence_counts(self, run_id: str) -> list[tuple[DiscoveryCandidate, int]]:
         """Return candidates with one aggregate evidence count per durable row."""
         return [
