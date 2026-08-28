@@ -19,3 +19,5 @@ from app.models.affiliate_conversion import AffiliateConversion
 from app.models.affiliate_earning import AffiliateEarning
 from app.models.affiliate_payout import AffiliatePayout
 from app.models.affiliate_payout_attempt import AffiliatePayoutAttempt
+from app.models.mission_record import MissionRecord
+from app.models.worker import Worker
