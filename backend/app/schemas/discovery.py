@@ -54,6 +54,8 @@ class DiscoveryCandidateResponse(_Response):
     commission_currency: str | None
     recurring_period: str | None
     cookie_days: int | None
+    payout_threshold: Any | None
+    payout_currency: str | None
     verification_status: str
     disposition: str
     confidence: int | None
