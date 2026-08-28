@@ -14,6 +14,9 @@ The service:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
 from typing import List
 from urllib.parse import urljoin, urlparse
 
@@ -22,6 +25,27 @@ from bs4 import BeautifulSoup
 
 from app.services.website_fetcher import WebsiteFetcher
 from app.services.content_extractor import ContentExtractor
+
+
+@dataclass(frozen=True)
+class ResearchPage:
+    """Readable page content with stable provenance for downstream adapters."""
+
+    url: str
+    content: str
+    http_status: int | None
+    fetched_at: datetime
+    content_hash: str
+
+    @classmethod
+    def from_content(cls, url: str, content: str, http_status: int | None = None) -> "ResearchPage":
+        return cls(
+            url=url,
+            content=content,
+            http_status=http_status,
+            fetched_at=datetime.now(timezone.utc),
+            content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        )
 
 
 class WebsiteResearchService:
@@ -73,12 +97,12 @@ class WebsiteResearchService:
     def __init__(
         self,
         timeout: float = 10.0,
+        fetcher: WebsiteFetcher | None = None,
+        extractor: ContentExtractor | None = None,
     ):
-        self.fetcher = WebsiteFetcher(
-            timeout=timeout
-        )
+        self.fetcher = fetcher or WebsiteFetcher(timeout=timeout)
 
-        self.extractor = ContentExtractor()
+        self.extractor = extractor or ContentExtractor()
 
         self.timeout = timeout
 
@@ -312,11 +336,15 @@ class WebsiteResearchService:
         URLs, and combine all readable content.
         """
 
-        homepage_html = (
-            self._fetch_page(
-                url
-            )
+        pages = self.research_pages(url)
+        return "\n\n".join(
+            "SOURCE URL:\n" + page.url + "\n\nCONTENT:\n" + page.content
+            for page in pages
         )
+
+    def research_pages(self, url: str) -> list[ResearchPage]:
+        """Return page-level research observations without breaking ``research`` callers."""
+        homepage_html = self._fetch_page(url)
 
         if not homepage_html:
 
@@ -324,7 +352,7 @@ class WebsiteResearchService:
                 "Unable to fetch website."
             )
 
-        pages = [
+        page_urls = [
             url
         ]
 
@@ -341,14 +369,14 @@ class WebsiteResearchService:
 
         for link in discovered_links:
 
-            if link not in pages:
+            if link not in page_urls:
 
-                pages.append(
+                page_urls.append(
                     link
                 )
 
             if (
-                len(pages)
+                len(page_urls)
                 >= self.MAX_PAGES
             ):
                 break
@@ -358,7 +386,7 @@ class WebsiteResearchService:
         # ------------------------------------------------------
 
         if (
-            len(pages)
+            len(page_urls)
             < self.MAX_PAGES
         ):
 
@@ -370,7 +398,7 @@ class WebsiteResearchService:
 
             for candidate in candidate_urls:
 
-                if candidate in pages:
+                if candidate in page_urls:
                     continue
 
                 if not self._same_domain(
@@ -384,12 +412,12 @@ class WebsiteResearchService:
                 ):
                     continue
 
-                pages.append(
+                page_urls.append(
                     candidate
                 )
 
                 if (
-                    len(pages)
+                    len(page_urls)
                     >= self.MAX_PAGES
                 ):
                     break
@@ -398,9 +426,9 @@ class WebsiteResearchService:
         # 3. Fetch and extract all selected pages
         # ------------------------------------------------------
 
-        research_sections = []
+        research_pages = []
 
-        for page_url in pages:
+        for page_url in page_urls:
 
             if page_url == url:
 
@@ -428,26 +456,17 @@ class WebsiteResearchService:
             if not text:
                 continue
 
-            research_sections.append(
-                (
-                    "SOURCE URL:\n"
-                    f"{page_url}\n\n"
-                    "CONTENT:\n"
-                    f"{text}"
-                )
-            )
+            research_pages.append(ResearchPage.from_content(page_url, text, http_status=200))
 
         # ------------------------------------------------------
         # 4. Validate research result
         # ------------------------------------------------------
 
-        if not research_sections:
+        if not research_pages:
 
             raise ValueError(
                 "No readable website "
                 "content found."
             )
 
-        return "\n\n".join(
-            research_sections
-        )
+        return research_pages

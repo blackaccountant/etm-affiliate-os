@@ -21,3 +21,4 @@ __all__ = [
     "EvidenceObservationCreate",
     "VerificationStatus",
 ]
+"""Durable source-agnostic discovery primitives."""
