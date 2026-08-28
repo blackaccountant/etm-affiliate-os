@@ -39,7 +39,14 @@ class DiscoveryRunOrchestrationService:
         self.ranking = ranking or DiscoveryRankingService(db)
         self.selection = selection or DiscoveryWinnerSelectionService(db, self.ranking)
 
-    def execute(self, run_id: str, top_n: int = 1, minimum_score: int = 40, minimum_evidence_confidence: int = 70) -> DiscoveryRunOrchestrationResult:
+    def execute(
+        self,
+        run_id: str,
+        top_n: int = 1,
+        minimum_score: int = 40,
+        minimum_evidence_confidence: int = 70,
+        defer_terminal_failure: bool = False,
+    ) -> DiscoveryRunOrchestrationResult:
         run = self.runs.get_by_id(run_id)
         self._validate(run, top_n, minimum_score, minimum_evidence_confidence)
         assert run is not None
@@ -66,7 +73,10 @@ class DiscoveryRunOrchestrationService:
             return self._durable_result(run_id)
         except Exception as original_error:
             try:
-                self.runs.update_status(run_id, DiscoveryRunStatus.FAILED, str(original_error))
+                # Mission-backed retries need a non-terminal business state that
+                # the existing orchestrator can safely execute again.
+                target = DiscoveryRunStatus.CREATED if defer_terminal_failure else DiscoveryRunStatus.FAILED
+                self.runs.update_status(run_id, target, str(original_error))
             except Exception as finalization_error:
                 raise RuntimeError("discovery run failure could not be persisted") from finalization_error
             raise
