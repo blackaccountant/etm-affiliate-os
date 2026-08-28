@@ -21,3 +21,4 @@ from app.models.affiliate_payout import AffiliatePayout
 from app.models.affiliate_payout_attempt import AffiliatePayoutAttempt
 from app.models.mission_record import MissionRecord
 from app.models.worker import Worker
+from app.models.discovery import DiscoveryRun, DiscoveryCandidate, EvidenceObservation
