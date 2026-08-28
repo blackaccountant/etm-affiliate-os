@@ -11,7 +11,7 @@ from app.mission.mission import Mission
 from app.mission.mission_result import MissionResult
 from app.mission.registry import MissionRegistry
 from app.mission.result_registry import ResultRegistry
-from app.mission.status import MissionStatus
+from app.mission.status import MissionStatus, validate_mission_transition
 from app.repositories.execution_repository import ExecutionRepository
 from app.repositories.mission_repository import MissionRepository
 from app.repositories.worker_repository import WorkerRepository
@@ -91,10 +91,20 @@ class MissionManager:
         return mission
 
     def _transition(self, mission, repository, status, **kwargs):
-        mission.update_status(status)
-        record = repository.update_status(mission.id, status, **kwargs)
+        target_status = MissionStatus(status)
+        validate_mission_transition(mission.status, target_status)
+        record = repository.update_status(mission.id, target_status, **kwargs)
         if record is None:
             raise RuntimeError("Durable mission record disappeared during launch")
+        mission.status = target_status
+        mission.updated_at = record.updated_at
+
+    def _release_terminal_worker(self, repository, worker, mission, success):
+        if not repository.release(worker.name, mission.id, success=success):
+            raise RuntimeError(
+                f"Durable worker release failed for worker {worker.name} and mission {mission.id}"
+            )
+        self.workforce.release(worker.name, success=success)
 
     def _finalize(self, mission, worker, task, execution, repositories, result, duration):
         missions, workers, executions = repositories
@@ -102,16 +112,20 @@ class MissionManager:
         errors = self._errors(result) or []
         error = None if success else "; ".join(map(str, errors)) or "Mission execution failed."
         failure = self.failure_classifier.classify(error) if not success else {}
-        retrying = (not success and task.status == "QUEUED" and task.retry_count > 0)
+        retrying = (
+            not success
+            and task.status == "QUEUED"
+            and 0 < task.retry_count < task.max_retries
+        )
         payload = self._normalize(result) if result is not None else {"success": False, "error": error}
         serialized = json.dumps(payload, default=str)
         next_retry_at = None
         if success:
             executions.complete(execution, duration, serialized)
             self._transition(mission, missions, MissionStatus.COMPLETED,
-                             result_data=payload, last_error=None)
-            workers.release(worker.name, mission.id, success=True)
-            self.workforce.release(worker.name, success=True)
+                             result_data=payload, last_error=None,
+                             current_worker_name=None)
+            self._release_terminal_worker(workers, worker, mission, success=True)
         elif retrying:
             execution.result_data = serialized
             next_retry_at = self.executor.retry_policy.calculate_next_retry(task)
@@ -124,9 +138,9 @@ class MissionManager:
             execution.result_data = serialized
             executions.fail(execution, error, failure.get("failure_type"), duration, task.retry_count)
             self._transition(mission, missions, MissionStatus.FAILED,
-                             result_data=payload, last_error=error)
-            workers.release(worker.name, mission.id, success=False)
-            self.workforce.release(worker.name, success=False)
+                             result_data=payload, last_error=error,
+                             current_worker_name=None)
+            self._release_terminal_worker(workers, worker, mission, success=False)
         if self.runtime:
             self.runtime.memory.store("latest_mission_result", {
                 "mission_id": mission.id,
