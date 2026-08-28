@@ -105,6 +105,29 @@ class WorkforceManager:
             worker.finish_mission(success=success)
             return worker
 
+    def sync_from_durable(self, durable_worker, mission_name=None):
+        """Project durable worker ownership into the in-memory workforce only."""
+        with self._lock:
+            worker = self.registry.get(durable_worker.name)
+            if worker is None:
+                worker = WorkerInfo(
+                    name=durable_worker.name,
+                    worker_type=durable_worker.worker_type,
+                )
+                self.registry.register(worker)
+
+            worker.worker_type = durable_worker.worker_type
+            worker.capabilities = list(durable_worker.capabilities or [])
+            worker.status = WorkerStatus(durable_worker.status)
+            worker.missions_completed = durable_worker.missions_completed
+            worker.success_rate = durable_worker.success_rate
+            worker.created_at = durable_worker.created_at
+            worker.updated_at = durable_worker.updated_at
+            worker.current_mission = (
+                mission_name if worker.status is WorkerStatus.BUSY else None
+            )
+            return worker
+
     def get_worker(
         self,
         worker_name: str,

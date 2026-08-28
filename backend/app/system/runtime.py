@@ -23,10 +23,13 @@ from app.executor.executor import TaskExecutor
 from app.retry.retry_scanner import RetryScanner
 from app.retry.retry_worker import RetryWorker
 from app.retry.retry_manager import RetryManager
+from app.retry.retry_lifecycle_coordinator import RetryLifecycleCoordinator
 
 from app.repositories.execution_repository import (
     ExecutionRepository,
 )
+from app.repositories.mission_repository import MissionRepository
+from app.repositories.worker_repository import WorkerRepository
 
 from app.services.execution_service import (
     ExecutionService,
@@ -37,7 +40,7 @@ from app.database.session import SessionLocal
 
 class RuntimeAdapter:
 
-    def __init__(self):
+    def __init__(self, session_factory=None):
 
         # ==================================================
         # Core Runtime Infrastructure
@@ -55,6 +58,9 @@ class RuntimeAdapter:
         self.workforce = WorkforceManager(
             load_defaults=True
         )
+
+        # Store a factory only; retry cycles own and close their sessions.
+        self.session_factory = session_factory or SessionLocal
 
 
         # ==================================================
@@ -111,7 +117,7 @@ class RuntimeAdapter:
         and the retry manager background thread.
         """
 
-        db = SessionLocal()
+        db = self.session_factory()
 
 
         try:
@@ -125,6 +131,8 @@ class RuntimeAdapter:
                     db
                 )
             )
+            mission_repository = MissionRepository(db)
+            worker_repository = WorkerRepository(db)
 
 
             # ==============================================
@@ -167,6 +175,18 @@ class RuntimeAdapter:
                     execution_service
                 ),
             )
+            # RetryLifecycleCoordinator owns worker finalization after durable release.
+            retry_executor.workforce = None
+
+            coordinator = RetryLifecycleCoordinator(
+                db=db,
+                execution_service=execution_service,
+                mission_repository=mission_repository,
+                worker_repository=worker_repository,
+                workforce=self.workforce,
+                executor=retry_executor,
+                runtime=self,
+            )
 
 
             # ==============================================
@@ -175,7 +195,7 @@ class RuntimeAdapter:
 
             retry_worker = RetryWorker(
                 scheduler=scheduler,
-                executor=retry_executor,
+                executor=coordinator,
             )
 
 

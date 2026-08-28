@@ -165,6 +165,12 @@ class RetryScanner:
             None,
         )
 
+        worker_name = getattr(
+            execution,
+            "worker_name",
+            None,
+        )
+
 
         payload.update(
             {
@@ -179,6 +185,8 @@ class RetryScanner:
                 "failure_type": failure_type,
             }
         )
+        if worker_name:
+            payload["worker_name"] = worker_name
 
 
         return payload
