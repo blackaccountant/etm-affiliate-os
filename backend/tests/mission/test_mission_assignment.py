@@ -3,7 +3,7 @@ from app.workforce.manager import WorkforceManager
 from app.workforce.worker_info import WorkerInfo
 
 
-def test_assign_worker_to_mission():
+def test_assign_worker_to_mission(db_session_factory):
 
     workforce = WorkforceManager()
 
@@ -15,7 +15,9 @@ def test_assign_worker_to_mission():
         )
     )
 
-    manager = MissionManager()
+    manager = MissionManager(
+        session_factory=db_session_factory,
+    )
 
     mission = manager.create_mission(
         name="Affiliate Discovery",

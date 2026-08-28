@@ -3,13 +3,15 @@ from app.system.runtime import RuntimeAdapter
 
 
 
-def test_mission_result_saved_to_runtime_memory():
+def test_mission_result_saved_to_runtime_memory(db_session_factory):
 
     runtime = RuntimeAdapter()
 
 
     manager = MissionManager(
-        runtime=runtime
+        runtime=runtime,
+        workforce=runtime.workforce,
+        session_factory=db_session_factory,
     )
 
 

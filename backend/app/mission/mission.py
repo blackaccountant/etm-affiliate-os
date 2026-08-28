@@ -24,9 +24,13 @@ class Mission:
         workflow: str,
         metadata: dict | None = None,
         required_capability: str | None = None,
+        mission_id: str | None = None,
+        status: MissionStatus = MissionStatus.CREATED,
+        created_at=None,
+        updated_at=None,
     ):
 
-        self.id = str(uuid4())
+        self.id = mission_id or str(uuid4())
 
         self.name = name
 
@@ -38,13 +42,30 @@ class Mission:
             required_capability
         )
 
-        self.status = MissionStatus.CREATED
+        self.status = MissionStatus(status)
 
         self.metadata = metadata or {}
 
-        self.created_at = datetime.now(timezone.utc)
+        self.created_at = created_at or datetime.now(timezone.utc)
 
-        self.updated_at = self.created_at
+        self.updated_at = updated_at or self.created_at
+
+    @classmethod
+    def from_record(cls, record):
+        import json
+
+        metadata = json.loads(record.input_data) if record.input_data else {}
+        return cls(
+            name=record.name,
+            objective=record.objective,
+            workflow=record.workflow_name,
+            metadata=metadata,
+            required_capability=record.required_capability,
+            mission_id=record.id,
+            status=MissionStatus(record.status),
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )
 
 
     def update_status(

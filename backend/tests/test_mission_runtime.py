@@ -2,12 +2,14 @@ from app.mission.manager import MissionManager
 from app.system.runtime import RuntimeAdapter
 
 
-def test_mission_execution_reports_to_runtime():
+def test_mission_execution_reports_to_runtime(db_session_factory):
 
     runtime = RuntimeAdapter()
 
     manager = MissionManager(
-        runtime=runtime
+        runtime=runtime,
+        workforce=runtime.workforce,
+        session_factory=db_session_factory,
     )
 
     result = manager.launch(

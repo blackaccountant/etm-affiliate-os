@@ -77,6 +77,20 @@ class WorkforceManager:
 
             return None
 
+    def claim_durable(self, mission_name, capability, claim):
+        """Keep local selection synchronized with the durable claim boundary."""
+        with self._lock:
+            for worker in self.registry.all():
+                if worker.status is not WorkerStatus.ONLINE:
+                    continue
+                if capability and not worker.has_capability(capability):
+                    continue
+                if not claim(worker):
+                    continue
+                worker.start_mission(mission_name)
+                return worker
+            return None
+
     def release(
         self,
         worker_name: str,

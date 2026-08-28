@@ -1,10 +1,14 @@
 from app.mission.manager import MissionManager
+from app.workforce.manager import WorkforceManager
 
 
 
-def test_product_discovery_mission_execution():
+def test_product_discovery_mission_execution(db_session_factory):
 
-    manager = MissionManager()
+    manager = MissionManager(
+        workforce=WorkforceManager(load_defaults=True),
+        session_factory=db_session_factory,
+    )
 
 
     result = manager.launch(

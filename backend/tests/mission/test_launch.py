@@ -1,74 +1,31 @@
 from app.mission.manager import MissionManager
+from app.models.execution import Execution
+from app.models.mission_record import MissionRecord
 from app.workforce.manager import WorkforceManager
 from app.workforce.worker_info import WorkerInfo
 from app.workflow_engine.workflow_result import WorkflowResult
 
 
-class FakeSession:
-    def __init__(self):
-        self.added = []
-        self.committed = False
-        self.closed = False
-
-    def add(self, value):
-        self.added.append(value)
-
-    def commit(self):
-        self.committed = True
-
-    def refresh(self, value):
-        pass
-
-    def close(self):
-        self.closed = True
-
-
-class SuccessfulWorkflowEngine:
-    def __init__(self):
-        self.calls = []
+class InspectingEngine:
+    def __init__(self, session_factory):
+        self.session_factory = session_factory
+        self.observed = None
 
     def run(self, workflow_name, payload):
-        self.calls.append((workflow_name, payload))
-        return WorkflowResult(
-            success=True,
-            workflow=workflow_name,
-            data={"products": [{"company": "Example"}]},
-        )
+        session = self.session_factory()
+        try:
+            self.observed = (session.query(MissionRecord).one().status, session.query(Execution).one().status)
+        finally:
+            session.close()
+        return WorkflowResult(success=True, workflow=workflow_name, data={"test": True})
 
 
-def test_launch_mission(monkeypatch):
+def test_launch_mission_persists_before_workflow(db_session_factory):
     workforce = WorkforceManager()
-    workforce.register(
-        WorkerInfo(
-            name="Product Hunter",
-            worker_type="Research",
-            status="ONLINE",
-        )
-    )
-
-    session = FakeSession()
-    engine = SuccessfulWorkflowEngine()
-    monkeypatch.setattr(
-        "app.mission.manager.SessionLocal",
-        lambda: session,
-    )
-    manager = MissionManager(workforce=workforce)
+    workforce.register(WorkerInfo("Product Hunter", "Research", status="ONLINE"))
+    manager = MissionManager(workforce=workforce, session_factory=db_session_factory)
+    engine = InspectingEngine(db_session_factory)
     manager.executor.engine = engine
-    launch = manager.launch(
-        name="Affiliate Discovery",
-        objective="Find profitable affiliate products",
-        workflow="affiliate_discovery",
-    )
-
-    assert launch["mission"] is not None
-    assert launch["worker"] is not None
-    assert (
-        launch["worker"].status
-        ==
-        "BUSY"
-    )
+    launch = manager.launch("Affiliate Discovery", "Find products", "affiliate_discovery")
+    assert engine.observed == ("RUNNING", "RUNNING")
     assert launch["result"].success is True
-    assert engine.calls == [("affiliate_discovery", {})]
-    assert len(session.added) == 1
-    assert session.committed is True
-    assert session.closed is True

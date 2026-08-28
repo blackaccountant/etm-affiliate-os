@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.worker import Worker
@@ -40,6 +41,25 @@ class WorkerRepository:
 
     def get_by_name(self, name: str) -> Worker | None:
         return self.db.get(Worker, name)
+
+    def ensure(self, worker) -> Worker:
+        """Create a durable catalog row without resetting existing state."""
+        existing = self.get_by_name(worker.name)
+        if existing is not None:
+            return existing
+        try:
+            return self.create(
+                name=worker.name,
+                worker_type=worker.worker_type,
+                capabilities=worker.capabilities,
+                status=worker.status,
+            )
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.get_by_name(worker.name)
+            if existing is None:
+                raise
+            return existing
 
     def list_by_status(self, status: WorkerStatus):
         return (
