@@ -15,6 +15,8 @@ from app.repositories.discovery_candidate_repository import DiscoveryCandidateRe
 from app.repositories.discovery_run_repository import DiscoveryRunRepository
 from app.repositories.evidence_observation_repository import EvidenceObservationRepository
 from app.retry.retry_policy import RetryPolicy
+from app.retry.retry_scanner import RetryScanner
+from app.scheduler.scheduler import Scheduler
 from app.services.discovery_run_orchestration_service import DiscoveryRunOrchestrationResult, DiscoveryRunOrchestrationService
 from app.services.official_site_discovery_service import OfficialSiteDiscoveryService
 from app.task_queue.task import Task
@@ -262,6 +264,112 @@ def test_no_candidate_completed_and_completed_run_is_idempotent(db_session, db_s
     after = db_session.get(DiscoveryCandidate, candidate.id)
     assert repeated.success is True and never.calls == 0
     assert (after.updated_at, db_session.query(EvidenceObservation).filter_by(candidate_id=candidate.id).count()) == before
+
+
+@pytest.mark.parametrize("payload_update", [{"top_n": 0}, {"minimum_score": 101}, {"minimum_evidence_confidence": 101}])
+def test_invalid_policy_on_created_run_marks_run_failed(db_session, db_session_factory, payload_update):
+    run = create_run(db_session)
+    no_ingestion = NoCandidateIngestion()
+    subject = workflow(db_session_factory, no_ingestion)
+    result = subject.execute({"discovery_run_id": run.id, **payload_update})
+    refreshed = fresh_run(db_session, run.id)
+    assert result.success is False
+    assert refreshed.status == DiscoveryRunStatus.FAILED.value
+    assert refreshed.last_error is not None
+    assert any(key in refreshed.last_error.lower() for key in ["top_n", "minimum_score", "minimum_evidence_confidence"])
+    assert no_ingestion.calls == 0
+
+
+@pytest.mark.parametrize("payload_update", [{"retry_count": -1}, {"max_retries": -1}, {"max_retries": "invalid"}])
+def test_invalid_retry_metadata_on_created_run_marks_run_failed(db_session, db_session_factory, payload_update):
+    run = create_run(db_session)
+    no_ingestion = NoCandidateIngestion()
+    subject = workflow(db_session_factory, no_ingestion)
+    result = subject.execute({"discovery_run_id": run.id, **payload_update})
+    refreshed = fresh_run(db_session, run.id)
+    assert result.success is False
+    assert refreshed.status == DiscoveryRunStatus.FAILED.value
+    assert refreshed.last_error is not None
+    assert any(key in refreshed.last_error.lower() for key in ["retry_count", "max_retries", "integer"])
+    assert no_ingestion.calls == 0
+
+
+def test_invalid_policy_failure_closes_session_on_created_run(db_session, db_session_factory):
+    run = create_run(db_session)
+    sessions = []
+
+    class TrackedSession:
+        def __init__(self):
+            self.session, self.closed = db_session_factory(), False
+
+        def close(self):
+            self.closed = True
+            self.session.close()
+
+        def __getattr__(self, name):
+            return getattr(self.session, name)
+
+    def factory():
+        sessions.append(TrackedSession())
+        return sessions[-1]
+
+    result = workflow(factory, NoCandidateIngestion()).execute({"discovery_run_id": run.id, "top_n": 0})
+    assert result.success is False
+    assert len(sessions) == 1 and sessions[0].closed is True
+
+
+def test_retry_scanner_restores_complete_discovery_policy_payload_from_execution_input_data():
+    class RetryExecution:
+        id = 42
+        workflow_name = "affiliate_discovery_run"
+        mission_id = "mission-7"
+        worker_name = "Product Hunter"
+        retry_count = 1
+        max_retries = 3
+        failure_type = "NETWORK"
+        status = "QUEUED"
+        input_data = json.dumps({
+            "discovery_run_id": "run-abc",
+            "top_n": 2,
+            "minimum_score": 55,
+            "minimum_evidence_confidence": 80,
+        })
+
+    class ScannerService:
+        def __init__(self, execution):
+            self.execution = execution
+
+        def get_retry_queue(self, limit):
+            return [self.execution]
+
+        def claim_retry(self, execution):
+            execution.status = "RETRYING"
+            return execution
+
+    execution = RetryExecution()
+    tasks = RetryScanner(ScannerService(execution), Scheduler()).scan_once(limit=4)
+    assert len(tasks) == 1
+    payload = tasks[0].payload
+    assert payload["discovery_run_id"] == "run-abc"
+    assert payload["top_n"] == 2
+    assert payload["minimum_score"] == 55
+    assert payload["minimum_evidence_confidence"] == 80
+    assert payload["retry_count"] == 1
+    assert payload["max_retries"] == 3
+    assert payload["mission_id"] == "mission-7"
+    assert payload["execution_id"] == 42
+    assert payload["worker_name"] == "Product Hunter"
+
+
+def test_phase_3d2_mission_metadata_contract_is_json_safe():
+    run_id = "run-123"
+    metadata = {
+        "discovery_run_id": run_id,
+        "top_n": 1,
+        "minimum_score": 40,
+        "minimum_evidence_confidence": 70,
+    }
+    assert json.loads(json.dumps(metadata)) == metadata
 
 
 def test_running_and_existing_failed_runs_refuse_reentry_without_downstream_writes(db_session, db_session_factory):

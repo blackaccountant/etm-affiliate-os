@@ -33,7 +33,7 @@ class AffiliateDiscoveryRunWorkflow:
     def _integer(payload, name, default, minimum):
         value = payload.get(name, default)
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
-            raise ValueError(f"{name} must be an integer greater than or equal to {minimum}")
+            raise ValueError(f"invalid {name}: must be an integer greater than or equal to {minimum}")
         return value
 
     def _payload(self, payload):
@@ -41,7 +41,7 @@ class AffiliateDiscoveryRunWorkflow:
             raise ValueError("workflow payload is required")
         run_id = payload.get("discovery_run_id")
         if not isinstance(run_id, str) or not run_id.strip():
-            raise ValueError("discovery_run_id is required")
+            raise ValueError("invalid discovery_run_id: discovery_run_id is required")
         return {
             "discovery_run_id": run_id,
             "top_n": self._integer(payload, "top_n", 1, 1),
@@ -101,14 +101,47 @@ class AffiliateDiscoveryRunWorkflow:
         )
 
     def execute(self, payload):
-        try:
-            values = self._payload(payload)
-        except ValueError as error:
-            return self._failure_result(None, str(error), self.failure_classifier.classify(str(error)), 0, 3, None)
+        if not isinstance(payload, dict):
+            error = "workflow payload is required"
+            return self._failure_result(None, error, self.failure_classifier.classify(error), 0, 3, None)
+
+        run_id = payload.get("discovery_run_id")
+        if not isinstance(run_id, str) or not run_id.strip():
+            error = "invalid discovery_run_id: discovery_run_id is required"
+            return self._failure_result(None, error, self.failure_classifier.classify(error), 0, 3, None)
 
         db = self.session_factory()
         try:
             runs = DiscoveryRunRepository(db)
+            run = runs.get_by_id(run_id)
+
+            if run is None:
+                return self._failure_result(
+                    run_id,
+                    "discovery run does not exist",
+                    self.failure_classifier.classify("discovery run does not exist"),
+                    payload.get("retry_count", 0),
+                    payload.get("max_retries", 3),
+                    None,
+                )
+
+            try:
+                values = self._payload(payload)
+            except ValueError as error:
+                canonical_error = self._canonical_error(error)
+                failure = self.failure_classifier.classify(canonical_error)
+                if run.status == DiscoveryRunStatus.CREATED.value:
+                    runs.update_status(run.id, DiscoveryRunStatus.FAILED, canonical_error)
+                    run = runs.get_by_id(run_id)
+                return self._failure_result(
+                    run_id,
+                    canonical_error,
+                    failure,
+                    payload.get("retry_count", 0),
+                    payload.get("max_retries", 3),
+                    run.status if run is not None else None,
+                )
+
             try:
                 result = self.orchestration_factory(db).execute(
                     values["discovery_run_id"],
@@ -124,7 +157,6 @@ class AffiliateDiscoveryRunWorkflow:
                     rollback()
                 canonical_error = self._canonical_error(error)
                 failure = self.failure_classifier.classify(canonical_error)
-                run = runs.get_by_id(values["discovery_run_id"])
 
                 # Pre-existing RUNNING/FAILED states must never be reopened by
                 # this workflow. Deferred errors are the only path restored to CREATED.
