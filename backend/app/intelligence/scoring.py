@@ -466,11 +466,11 @@ class AffiliateScoringEngine:
         # additional boost when multiple independent
         # signals exist.
 
-        if len(discovery_reasons) >= 2:
-            confidence += 5
-
-        elif len(discovery_reasons) >= 4:
+        if len(discovery_reasons) >= 4:
             confidence += 10
+
+        elif len(discovery_reasons) >= 2:
+            confidence += 5
 
         return max(
             min(confidence, 100),
