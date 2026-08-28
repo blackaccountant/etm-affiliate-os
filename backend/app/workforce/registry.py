@@ -20,6 +20,12 @@ class WorkforceRegistry:
         worker: WorkerInfo,
     ):
 
+        if worker.name in self._workers:
+
+            raise ValueError(
+                f"Worker already registered: {worker.name}"
+            )
+
         self._workers[worker.name] = worker
 
         return worker

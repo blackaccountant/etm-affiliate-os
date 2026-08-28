@@ -1,6 +1,7 @@
 from app.workforce.manager import WorkforceManager
 
 from app.workforce.worker_info import WorkerInfo
+from app.workforce.status import WorkerStatus
 
 
 def test_manager_creation():
@@ -32,6 +33,7 @@ def test_available_workers():
         WorkerInfo(
             name="Product Hunter",
             worker_type="Research",
+            status=WorkerStatus.ONLINE,
         )
     )
 

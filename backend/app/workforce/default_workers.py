@@ -6,6 +6,7 @@ available to ETM Affiliate OS.
 """
 
 from app.workforce.worker_info import WorkerInfo
+from app.workforce.status import WorkerStatus
 
 
 def create_default_workers():
@@ -24,7 +25,7 @@ def create_default_workers():
                 "affiliate_research",
                 "market_analysis",
             ],
-            status="ONLINE",
+            status=WorkerStatus.ONLINE,
         ),
 
         # ==================================================
@@ -39,7 +40,7 @@ def create_default_workers():
                 "competitor_analysis",
                 "data_collection",
             ],
-            status="ONLINE",
+            status=WorkerStatus.ONLINE,
         ),
 
         # ==================================================
@@ -54,7 +55,7 @@ def create_default_workers():
                 "seo_content",
                 "product_reviews",
             ],
-            status="ONLINE",
+            status=WorkerStatus.ONLINE,
         ),
 
     ]

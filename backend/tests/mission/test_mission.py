@@ -1,6 +1,5 @@
 from app.mission.mission import Mission
-
-from app.execution.status import ExecutionStatus
+from app.mission.status import MissionStatus
 
 
 
@@ -18,7 +17,7 @@ def test_mission_creation():
     assert (
         mission.status
         ==
-        ExecutionStatus.CREATED
+        MissionStatus.CREATED
     )
 
 
@@ -33,14 +32,18 @@ def test_mission_update_status():
 
 
     mission.update_status(
-        ExecutionStatus.RUNNING
+        MissionStatus.ASSIGNED
+    )
+
+    mission.update_status(
+        MissionStatus.RUNNING
     )
 
 
     assert (
         mission.status
         ==
-        ExecutionStatus.RUNNING
+        MissionStatus.RUNNING
     )
 
 

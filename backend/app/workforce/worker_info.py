@@ -6,7 +6,9 @@ ETM Affiliate OS.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
+
+from app.workforce.status import WorkerStatus
 
 
 @dataclass
@@ -20,7 +22,7 @@ class WorkerInfo:
         default_factory=list
     )
 
-    status: str = "OFFLINE"
+    status: WorkerStatus = WorkerStatus.OFFLINE
 
     current_mission: str | None = None
 
@@ -29,8 +31,17 @@ class WorkerInfo:
     success_rate: float = 100.0
 
     created_at: datetime = field(
-        default_factory=datetime.now
+        default_factory=lambda: datetime.now(timezone.utc)
     )
+
+    updated_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
+    def __post_init__(self):
+
+        self.status = WorkerStatus(self.status)
 
 
     # --------------------------------------------------
@@ -42,9 +53,17 @@ class WorkerInfo:
         mission_name: str,
     ):
 
-        self.status = "BUSY"
+        if self.status is not WorkerStatus.ONLINE:
+
+            raise ValueError(
+                "Only ONLINE workers can start a mission."
+            )
+
+        self.status = WorkerStatus.BUSY
 
         self.current_mission = mission_name
+
+        self.updated_at = datetime.now(timezone.utc)
 
 
 
@@ -53,7 +72,11 @@ class WorkerInfo:
         success: bool = True,
     ):
 
-        self.status = "ONLINE"
+        if self.status is not WorkerStatus.BUSY:
+
+            return False
+
+        self.status = WorkerStatus.ONLINE
 
         self.current_mission = None
 
@@ -63,6 +86,10 @@ class WorkerInfo:
         if not success:
 
             self.success_rate *= 0.95
+
+        self.updated_at = datetime.now(timezone.utc)
+
+        return True
 
 
 
@@ -106,7 +133,7 @@ class WorkerInfo:
 
             "capabilities": self.capabilities,
 
-            "status": self.status,
+            "status": self.status.value,
 
             "current_mission": self.current_mission,
 
@@ -116,5 +143,8 @@ class WorkerInfo:
 
             "created_at":
                 self.created_at.isoformat(),
+
+            "updated_at":
+                self.updated_at.isoformat(),
 
         }
