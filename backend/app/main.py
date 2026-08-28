@@ -27,6 +27,7 @@ from app.api.affiliate_links import router as affiliate_links_router
 from app.api.affiliate_conversions import router as affiliate_conversions_router
 from app.api.affiliate_earnings import router as affiliate_earnings_router
 from app.api.affiliate_payouts import router as affiliate_payouts_router
+from app.api.discovery import router as discovery_router
 
 
 # -----------------------------------------------------
@@ -289,4 +290,11 @@ app.include_router(
 
 app.include_router(
     affiliate_payouts_router,
+)
+
+
+app.include_router(
+    discovery_router,
+    prefix="/discovery",
+    tags=["Discovery"],
 )

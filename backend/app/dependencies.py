@@ -26,6 +26,9 @@ from app.repositories.execution_repository import (
 from app.services.execution_service import (
     ExecutionService,
 )
+from app.repositories.discovery_run_repository import DiscoveryRunRepository
+from app.services.discovery_query_service import DiscoveryQueryService
+from app.services.discovery_run_orchestration_service import DiscoveryRunOrchestrationService
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -97,3 +100,15 @@ def get_execution_service(
     return ExecutionService(
         repository
     )
+
+
+def get_discovery_run_repository(db: Session = Depends(get_db)) -> DiscoveryRunRepository:
+    return DiscoveryRunRepository(db)
+
+
+def get_discovery_query_service(db: Session = Depends(get_db)) -> DiscoveryQueryService:
+    return DiscoveryQueryService(db)
+
+
+def get_discovery_run_orchestration_service(db: Session = Depends(get_db)) -> DiscoveryRunOrchestrationService:
+    return DiscoveryRunOrchestrationService(db)
