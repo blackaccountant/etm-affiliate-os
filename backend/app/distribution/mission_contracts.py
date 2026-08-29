@@ -4,10 +4,14 @@ from dataclasses import asdict, dataclass
 CONTENT_DISTRIBUTION_MISSION_NAME = "ContentDistribution"
 CONTENT_DISTRIBUTION_WORKFLOW = "distribution_publish"
 CONTENT_DISTRIBUTION_CAPABILITY = "content_distribution"
+CONTENT_DISTRIBUTION_RECONCILIATION_MISSION_NAME = "ContentDistributionReconciliation"
+CONTENT_DISTRIBUTION_RECONCILIATION_WORKFLOW = "distribution_reconcile"
 
 def distribution_mission_idempotency_key(run_id: object) -> str:
     if not isinstance(run_id, str) or not run_id.strip(): raise ValueError("distribution_run_id is required")
     return f"distribution:{run_id.strip()}"
+def distribution_reconciliation_mission_idempotency_key(run_id: object) -> str:
+    return f"distribution-reconciliation:{distribution_mission_idempotency_key(run_id).removeprefix('distribution:')}"
 
 @dataclass(frozen=True)
 class DistributionWorkflowPayload:
@@ -17,6 +21,6 @@ class DistributionWorkflowPayload:
     def to_dict(self): return asdict(self)
     @classmethod
     def from_payload(cls, payload):
-        if not isinstance(payload, dict) or "distribution_run_id" not in payload or set(payload) - {"distribution_run_id", "mission_id", "execution_id", "worker_name", "retry_count", "max_retries", "failure_type"}:
+        if not isinstance(payload, dict) or "distribution_run_id" not in payload or set(payload) - {"distribution_run_id", "mission_id", "execution_id", "worker_name", "retry_count", "max_retries", "failure_type", "execution_recovery", "recovered_execution_id"}:
             raise ValueError("workflow payload contains unsupported runtime data")
         return cls(payload["distribution_run_id"])

@@ -20,6 +20,7 @@ from app.workflows.affiliate.discovery_run_workflow import (
 from app.workflows.content.content_generation_workflow import ContentGenerationWorkflow
 from app.workflows.content.content_repurposing_workflow import ContentRepurposingWorkflow
 from app.workflows.distribution.distribution_publish_workflow import DistributionPublishWorkflow
+from app.workflows.distribution.distribution_reconcile_workflow import DistributionReconcileWorkflow
 
 
 
@@ -59,6 +60,7 @@ def create_workflow_registry():
     registry.register("content_generate", ContentGenerationWorkflow())
     registry.register("content_repurpose", ContentRepurposingWorkflow())
     registry.register("distribution_publish", DistributionPublishWorkflow())
+    registry.register("distribution_reconcile", DistributionReconcileWorkflow())
 
 
 

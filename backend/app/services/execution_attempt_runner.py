@@ -8,6 +8,10 @@ from app.core.config import settings
 from app.repositories.execution_repository import ExecutionLeaseLostError, ExecutionRepository
 from app.services.execution_lease import ExecutionLeaseAuthority, ExecutionLeaseHeartbeat
 from app.services.owned_execution_lifecycle import OwnedExecutionLifecycleCoordinator
+from app.services.execution_runtime_context import (
+    ExecutionRuntimeContext,
+    activate_execution_runtime_context,
+)
 
 
 @dataclass
@@ -80,7 +84,13 @@ class ExecutionAttemptRunner:
             result = None
             original_error = None
             try:
-                result = self.executor.execute(task)
+                runtime_context = ExecutionRuntimeContext(
+                    authority=authority,
+                    mission_id=mission_id,
+                    is_recovery=supplied_authority,
+                )
+                with activate_execution_runtime_context(runtime_context):
+                    result = self.executor.execute(task)
             except Exception as exc:  # TaskExecutor normalized task retry state first.
                 original_error = exc
             duration = perf_counter() - started
