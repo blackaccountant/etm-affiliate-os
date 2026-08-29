@@ -27,3 +27,4 @@ from app.models.content_brief_evidence import ContentBriefEvidence
 from app.models.content_generation_run import ContentGenerationRun
 from app.models.generated_content_artifact import GeneratedContentArtifact
 from app.models.content_evaluation import ContentEvaluation
+from app.models.content_repurposing_run import ContentRepurposingRun
