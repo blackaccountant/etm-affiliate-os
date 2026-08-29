@@ -101,8 +101,11 @@ class OwnedExecutionLifecycleCoordinator:
         return OwnedLifecycleResult("COMPLETED", MissionStatus.COMPLETED)
 
     def fail(self, authority, *, mission_id, mission_name, worker_name,
-             duration, result_data, result_payload, error, failure_type, retry_count):
+             duration, result_data, result_payload, error, failure_type, retry_count,
+             participant=None):
         try:
+            if participant is not None:
+                participant.apply(self.db, authority, "FAILED", result_payload)
             self.executions.fail_owned(
                 authority, error=error, failure_type=failure_type, duration=duration,
                 retry_count=retry_count, commit=False,
@@ -120,8 +123,10 @@ class OwnedExecutionLifecycleCoordinator:
 
     def schedule_retry(self, authority, *, mission_id, mission_name, worker_name,
                        result_data, result_payload, retry_count, max_retries,
-                       next_retry_at, error, failure_type):
+                       next_retry_at, error, failure_type, participant=None):
         try:
+            if participant is not None:
+                participant.apply(self.db, authority, "RETRY_WAIT", result_payload)
             self.executions.schedule_retry_owned(
                 authority, retry_count=retry_count, max_retries=max_retries,
                 next_retry_at=next_retry_at, failure_type=failure_type,

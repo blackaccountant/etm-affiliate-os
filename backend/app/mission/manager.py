@@ -188,6 +188,7 @@ class MissionManager:
             mission_id=recovered.mission_id, mission_name=recovered.mission_name,
             worker_name=recovered.worker_name, task=task,
             authority=recovered.authority,
+            is_recovery=True,
         )
         if attempt.ownership_lost:
             return MissionResult(recovered.mission_id, False, attempt.result, "Execution lease ownership was lost.")

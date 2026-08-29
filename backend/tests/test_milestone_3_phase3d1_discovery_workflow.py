@@ -342,9 +342,9 @@ def test_retry_scanner_restores_complete_discovery_policy_payload_from_execution
         def get_retry_queue(self, limit):
             return [self.execution]
 
-        def claim_retry(self, execution):
-            execution.status = "RETRYING"
-            return execution
+        def claim_due_retry(self, execution_id):
+            self.execution.status = "RETRYING"
+            return self.execution
 
     execution = RetryExecution()
     tasks = RetryScanner(ScannerService(execution), Scheduler()).scan_once(limit=4)

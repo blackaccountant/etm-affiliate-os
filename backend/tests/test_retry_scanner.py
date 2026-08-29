@@ -33,7 +33,7 @@ class FakeExecutionService:
             FakeExecution()
         ]
 
-    def claim_retry(
+    def claim_due_retry(
         self,
         execution,
     ):

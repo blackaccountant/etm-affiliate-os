@@ -218,7 +218,7 @@ def test_claimed_retry_uses_the_same_leased_attempt_runtime(db_session_factory):
             input_data="{}", retry_count=1, max_retries=3,
             next_retry_at=datetime.now(timezone.utc) - timedelta(seconds=1),
         )
-        assert executions.claim_retry(execution) is not None
+        assert executions.claim_due_retry(execution.id) is not None
         task = Task("lease_workflow", {
             "execution_id": execution.id, "mission_id": mission.id,
             "worker_name": "Lease Worker",

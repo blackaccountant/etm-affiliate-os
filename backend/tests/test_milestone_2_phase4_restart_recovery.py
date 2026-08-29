@@ -85,7 +85,12 @@ def coordinator_for(db_session_factory, mission_id, execution_id, engine, workfo
     coordinator = RetryLifecycleCoordinator(
         session, service, MissionRepository(session), WorkerRepository(session), workforce, executor,
     )
-    execution = service.claim_retry(service.get_by_id(execution_id))
+    # These legacy coordinator tests deliberately construct a pre-G5 RETRYING
+    # row to exercise coordinator recovery validation in isolation.
+    execution = service.get_by_id(execution_id)
+    execution.status = "RETRYING"
+    session.commit()
+    session.refresh(execution)
     task = Task("test_workflow", {
         "input": True, "mission_id": mission_id, "execution_id": execution_id,
         "worker_name": execution.worker_name, "retry_count": execution.retry_count,

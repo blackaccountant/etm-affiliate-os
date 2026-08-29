@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.mission.status import MissionStatus, validate_mission_transition
 from app.services.execution_attempt_runner import ExecutionAttemptRunner
+from app.services.execution_lease import ExecutionLeaseAuthority
 
 
 class RetryLifecycleCoordinator:
@@ -79,6 +80,17 @@ class RetryLifecycleCoordinator:
             return None
         if execution.status != "RETRYING":
             return self._ownership_error(execution, "Claimed retry execution is not RETRYING")
+        authority = getattr(task, "execution_authority", None)
+        if authority is None and execution.lease_owner is not None:
+            authority = ExecutionLeaseAuthority(
+                execution.id, execution.lease_owner, execution.lease_generation,
+            )
+        if authority is not None and (
+            authority.execution_id != execution.id
+            or authority.lease_owner != execution.lease_owner
+            or authority.lease_generation != execution.lease_generation
+        ):
+            return self._ownership_error(execution, "Retry lease authority does not match durable execution")
         if not execution.mission_id or payload_mission_id != execution.mission_id:
             return self._ownership_error(execution, "Retry mission identity does not match durable execution")
         if not execution.worker_name or payload_worker_name != execution.worker_name:
@@ -87,7 +99,9 @@ class RetryLifecycleCoordinator:
         mission = self.missions.get_by_id(execution.mission_id)
         if mission is None:
             return self._ownership_error(execution, "Retry mission record is missing")
-        if mission.status != MissionStatus.RETRY_WAIT.value:
+        leased_claim = authority is not None
+        expected_mission_status = MissionStatus.RUNNING.value if leased_claim else MissionStatus.RETRY_WAIT.value
+        if mission.status != expected_mission_status:
             return self._ownership_error(execution, "Retry mission is not in RETRY_WAIT")
         if mission.current_worker_name != execution.worker_name:
             return self._ownership_error(execution, "Retry mission worker ownership does not match execution")
@@ -110,9 +124,10 @@ class RetryLifecycleCoordinator:
         ).execute(
             execution_id=execution.id, mission_id=mission.id, mission_name=mission.name,
             worker_name=durable_worker.name, task=task,
-            before_workflow=lambda: self._transition(
+            before_workflow=None if leased_claim else lambda: self._transition(
                 mission, MissionStatus.RUNNING, current_worker_name=durable_worker.name,
             ),
+            authority=authority,
         )
         if attempt.ownership_lost:
             self._event("Execution lease ownership was lost", execution_id=execution.id)

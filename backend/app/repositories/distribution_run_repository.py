@@ -52,6 +52,7 @@ class DistributionRunRepository:
         expected_statuses: tuple[str, ...],
         status: str,
         values: dict | None = None,
+        commit: bool = True,
     ) -> DistributionRun | None:
         """Apply a business-state transition only while the execution lease is live."""
         changes = dict(values or {})
@@ -63,9 +64,13 @@ class DistributionRunRepository:
             .filter(self._active_authority(authority))
             .update(changes, synchronize_session=False)
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         if updated == 1:
-            self.db.expire_all()
+            if commit:
+                self.db.expire_all()
             return self.get_by_id(run_id)
         if not self._authority_is_current(authority):
             raise ExecutionLeaseLostError("execution lease ownership was lost before DistributionRun transition")

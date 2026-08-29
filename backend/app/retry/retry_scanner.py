@@ -258,14 +258,10 @@ class RetryScanner:
             #     QUEUED -> RETRYING
             #
             # If another worker already claimed it,
-            # claim_retry() returns None.
+            # claim_due_retry() returns None.
             # ==========================================
 
-            claimed = (
-                self.execution_service.claim_retry(
-                    candidate
-                )
-            )
+            claimed = self.execution_service.claim_due_retry(candidate.id)
 
 
             if claimed is None:
@@ -360,16 +356,18 @@ class RetryScanner:
 
                 try:
 
-                    self.execution_service.schedule_retry(
-                        execution=execution,
-                        retry_count=retry_count,
-                        max_retries=max_retries,
-                        next_retry_at=datetime.now(
-                            timezone.utc
-                        ),
-                        failure_type=failure_type,
-                        error=error,
-                    )
+                    restore_claim = getattr(self.execution_service, "restore_due_retry_claim", None)
+                    if restore_claim is not None:
+                        restore_claim(execution.id, error)
+                    else:
+                        self.execution_service.schedule_retry(
+                            execution=execution,
+                            retry_count=retry_count,
+                            max_retries=max_retries,
+                            next_retry_at=datetime.now(timezone.utc),
+                            failure_type=failure_type,
+                            error=error,
+                        )
 
                 except Exception:
 
@@ -391,6 +389,10 @@ class RetryScanner:
                 task,
                 Task,
             ):
+
+                # The lease was committed with the scanner claim.  Keep it
+                # out of the durable payload but pass it to the coordinator.
+                task.execution_authority = getattr(execution, "retry_authority", None)
 
                 task.retry_count = (
                     getattr(

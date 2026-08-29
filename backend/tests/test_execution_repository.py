@@ -4,6 +4,9 @@ from app.models.execution import Execution
 from app.repositories.execution_repository import (
     ExecutionRepository,
 )
+from app.repositories.mission_repository import MissionRepository
+from app.repositories.worker_repository import WorkerRepository
+from app.workforce.status import WorkerStatus
 
 
 
@@ -41,6 +44,15 @@ def test_schedule_retry_and_get_retryable(
     repository = ExecutionRepository(
         db_session
     )
+    missions = MissionRepository(db_session)
+    workers = WorkerRepository(db_session)
+    mission = missions.create(
+        "claim-due-retry", "Claim due retry", "test", "affiliate_discovery",
+        current_worker_name="Retry Worker",
+    )
+    missions.update_status(mission.id, "RETRY_WAIT", current_worker_name="Retry Worker")
+    workers.create("Retry Worker", "Test", status=WorkerStatus.ONLINE)
+    assert workers.claim("Retry Worker", mission.id)
 
 
     execution = Execution(
@@ -52,6 +64,12 @@ def test_schedule_retry_and_get_retryable(
         retry_count=0,
 
         max_retries=3,
+
+        mission_id=mission.id,
+
+        worker_name="Retry Worker",
+
+        next_retry_at=datetime.now(timezone.utc) - timedelta(seconds=1),
 
     )
 
@@ -116,7 +134,7 @@ def test_schedule_retry_and_get_retryable(
 
 
 
-def test_claim_retry_changes_status(
+def test_claim_due_retry_changes_status(
     db_session,
 ):
 
@@ -149,12 +167,11 @@ def test_claim_retry_changes_status(
     )
 
 
-    claimed = repository.claim_retry(
-        execution
-    )
+    claimed = repository.claim_due_retry(execution.id)
 
 
     assert (
         claimed.status
         == "RETRYING"
     )
+    assert claimed.lease_owner and claimed.lease_generation == 1 and claimed.lease_expires_at > datetime.now(timezone.utc)

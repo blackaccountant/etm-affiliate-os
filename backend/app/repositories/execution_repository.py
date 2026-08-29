@@ -9,7 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.execution import Execution
+from app.models.mission_record import MissionRecord
+from app.models.worker import Worker
 from app.services.execution_lease import ExecutionLeaseAuthority
 
 
@@ -344,6 +347,8 @@ class ExecutionRepository:
         execution.error = error
 
         execution.completed_at = None
+        execution.lease_owner = None
+        execution.lease_expires_at = None
 
 
         self.db.commit()
@@ -360,49 +365,72 @@ class ExecutionRepository:
     # Claim Retry
     # ==================================================
 
-    def claim_retry(
-        self,
-        execution: Execution,
-    ):
-
-        updated = (
-            self.db.query(
-                Execution
-            )
-            .filter(
-                Execution.id
-                ==
-                execution.id
-            )
-            .filter(
-                Execution.status
-                ==
-                "QUEUED"
-            )
-            .update(
-                {
-                    Execution.status:
-                        "RETRYING",
-                },
-                synchronize_session=False,
-            )
+    def claim_due_retry(self, execution_id: int):
+        """Atomically convert a due queued retry into a leased active attempt."""
+        claimed = (
+            self.db.query(Execution)
+            .filter(Execution.id == execution_id)
+            .filter(Execution.status == "QUEUED")
+            .filter(Execution.retry_count < Execution.max_retries)
+            .filter((Execution.next_retry_at.is_(None)) | (Execution.next_retry_at <= self._utc_now()))
+            .with_for_update()
+            .one_or_none()
         )
-
-
-        self.db.commit()
-
-
-        if updated != 1:
-
+        if claimed is None:
+            self.db.rollback()
             return None
 
+        mission = self.db.query(MissionRecord).filter(MissionRecord.id == claimed.mission_id).with_for_update().one_or_none()
+        worker = self.db.query(Worker).filter(Worker.name == claimed.worker_name).with_for_update().one_or_none()
+        if (
+            mission is None
+            or mission.status != "RETRY_WAIT"
+            or mission.current_worker_name != claimed.worker_name
+            or worker is None
+            or worker.status != "BUSY"
+            or worker.current_mission_id != mission.id
+        ):
+            self.db.rollback()
+            return None
 
-        self.db.refresh(
-            execution
+        authority = ExecutionLeaseAuthority.fresh(
+            claimed.id, (claimed.lease_generation or 0) + 1,
         )
+        now = self._utc_now()
+        claimed.status = "RETRYING"
+        claimed.next_retry_at = None
+        claimed.lease_owner = authority.lease_owner
+        claimed.lease_generation = authority.lease_generation
+        claimed.lease_expires_at = now + timedelta(seconds=settings.EXECUTION_LEASE_SECONDS)
+        mission.status = "RUNNING"
+        mission.updated_at = now
+        mission.completed_at = None
+        self.db.commit()
+        self.db.refresh(claimed)
+        # Task-only metadata; never serialize this authority into durable input.
+        claimed.retry_authority = authority
+        return claimed
 
-
-        return execution
+    def restore_due_retry_claim(self, execution_id: int, error: str) -> bool:
+        """Return an undispatched leased claim to its durable retry state."""
+        execution = self.db.query(Execution).filter(Execution.id == execution_id).with_for_update().one_or_none()
+        if execution is None or execution.status != "RETRYING":
+            self.db.rollback()
+            return False
+        mission = self.db.query(MissionRecord).filter(MissionRecord.id == execution.mission_id).with_for_update().one_or_none()
+        if mission is None or mission.status != "RUNNING" or mission.current_worker_name != execution.worker_name:
+            self.db.rollback()
+            return False
+        now = self._utc_now()
+        execution.status = "QUEUED"
+        execution.next_retry_at = now
+        execution.error = error
+        execution.lease_owner = None
+        execution.lease_expires_at = None
+        mission.status = "RETRY_WAIT"
+        mission.updated_at = now
+        self.db.commit()
+        return True
 
 
     # ==================================================

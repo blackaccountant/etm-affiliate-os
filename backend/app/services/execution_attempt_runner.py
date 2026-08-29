@@ -3,11 +3,13 @@
 from dataclasses import dataclass
 import json
 from time import perf_counter
+from datetime import datetime, timezone
 
 from app.core.config import settings
 from app.repositories.execution_repository import ExecutionLeaseLostError, ExecutionRepository
 from app.services.execution_lease import ExecutionLeaseAuthority, ExecutionLeaseHeartbeat
 from app.services.owned_execution_lifecycle import OwnedExecutionLifecycleCoordinator
+from app.services.owned_lifecycle_participants import participant_for_workflow
 from app.services.execution_runtime_context import (
     ExecutionRuntimeContext,
     activate_execution_runtime_context,
@@ -39,7 +41,7 @@ class ExecutionAttemptRunner:
         )
 
     def execute(self, *, execution_id, mission_id, mission_name, worker_name, task,
-                before_workflow=None, authority=None):
+                before_workflow=None, authority=None, is_recovery=False):
         db = self.session_factory()
         heartbeat = None
         try:
@@ -52,7 +54,12 @@ class ExecutionAttemptRunner:
             if authority.execution_id != execution.id:
                 raise ValueError("execution authority does not match the requested execution")
             if supplied_authority:
-                if authority.lease_owner != execution.lease_owner or authority.lease_generation != execution.lease_generation:
+                if (
+                    authority.lease_owner != execution.lease_owner
+                    or authority.lease_generation != execution.lease_generation
+                    or execution.lease_expires_at is None
+                    or self._normalize_utc(execution.lease_expires_at) <= datetime.now(timezone.utc)
+                ):
                     return ExecutionAttemptResult(None, None, None, ownership_lost=True)
             else:
                 if not executions.acquire_lease(authority, self.lease_seconds or settings.EXECUTION_LEASE_SECONDS):
@@ -87,7 +94,7 @@ class ExecutionAttemptRunner:
                 runtime_context = ExecutionRuntimeContext(
                     authority=authority,
                     mission_id=mission_id,
-                    is_recovery=supplied_authority,
+                    is_recovery=is_recovery,
                 )
                 with activate_execution_runtime_context(runtime_context):
                     result = self.executor.execute(task)
@@ -120,6 +127,7 @@ class ExecutionAttemptRunner:
             serializer = getattr(self.executor, "_serialize_result", None)
             serialized = serializer(payload) if serializer else json.dumps(payload, default=str)
             lifecycle = OwnedExecutionLifecycleCoordinator(db, self.workforce)
+            participant = participant_for_workflow(execution.workflow_name)
             try:
                 # A legacy retry test double that does not implement the
                 # TaskExecutor normalization contract must not be interpreted
@@ -131,7 +139,7 @@ class ExecutionAttemptRunner:
                         result_payload=payload, retry_count=task.retry_count,
                         max_retries=task.max_retries,
                         next_retry_at=self._now(), error="Retry executor did not normalize outcome",
-                        failure_type=None,
+                        failure_type=None, participant=participant,
                     )
                 elif success:
                     final = lifecycle.complete(
@@ -146,7 +154,7 @@ class ExecutionAttemptRunner:
                         result_payload=payload, retry_count=task.retry_count,
                         max_retries=task.max_retries,
                         next_retry_at=self.executor.retry_policy.calculate_next_retry(task),
-                        error=error, failure_type=failure.get("failure_type"),
+                        error=error, failure_type=failure.get("failure_type"), participant=participant,
                     )
                 else:
                     final = lifecycle.fail(
@@ -154,6 +162,7 @@ class ExecutionAttemptRunner:
                         worker_name=worker_name, duration=duration,
                         result_data=serialized, result_payload=payload, error=error,
                         failure_type=failure.get("failure_type"), retry_count=task.retry_count,
+                        participant=participant,
                     )
             except ExecutionLeaseLostError:
                 return ExecutionAttemptResult(result, original_error, None, ownership_lost=True)
@@ -174,7 +183,7 @@ class ExecutionAttemptRunner:
         if hasattr(result, "dict"):
             return result.dict()
         if hasattr(result, "__dict__"):
-            return dict(result.__dict__)
+            return {key: value for key, value in result.__dict__.items() if not key.startswith("_")}
         return {"result": str(result)}
 
     @staticmethod
@@ -188,5 +197,8 @@ class ExecutionAttemptRunner:
 
     @staticmethod
     def _now():
-        from datetime import datetime, timezone
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _normalize_utc(value):
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)

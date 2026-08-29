@@ -159,9 +159,9 @@ def test_retry_scanner_restores_durable_payload_and_syncs_task_state():
             self.limits.append(limit)
             return [self.execution]
 
-        def claim_retry(self, execution):
-            execution.status = "RETRYING"
-            return execution
+        def claim_due_retry(self, execution_id):
+            self.execution.status = "RETRYING"
+            return self.execution
 
     execution = RetryExecution()
     service = ScannerService(execution)

@@ -96,10 +96,9 @@ def _claim_race(factory, execution_id):
     def contender():
         db = factory()
         try:
-            execution = db.get(Execution, execution_id)
             backend_pid = db.execute(text("SELECT pg_backend_pid()")).scalar_one()
             barrier.wait(timeout=10)
-            claimed = ExecutionRepository(db).claim_retry(execution)
+            claimed = ExecutionRepository(db).claim_due_retry(execution_id)
             with lock:
                 results.append((backend_pid, claimed is not None))
         finally:

@@ -36,6 +36,13 @@ class DistributionPublishWorkflow:
         return WorkflowResult(False, self.workflow_name, values.to_dict(), errors=[message])
 
     @staticmethod
+    def _safe_retry_failure(values, category, message):
+        """Return data for the trusted lifecycle participant; never executable code."""
+        data = values.to_dict()
+        data["distribution_failure_category"] = category.value
+        return WorkflowResult(False, "distribution_publish", data, errors=[message])
+
+    @staticmethod
     def _owned_set(repository, run, context, status, *, category=None, error=None, result=None):
         values = {"failure_category": category, "error_summary": error}
         if status == "PUBLISHING":
@@ -61,16 +68,33 @@ class DistributionPublishWorkflow:
         return transitioned
 
     @staticmethod
-    def _trusted_retry(db, payload, run):
+    def _trusted_retry(db, payload, run, context):
         required = {"execution_id", "mission_id", "worker_name", "retry_count", "max_retries"}
-        if not isinstance(payload, dict) or not required.issubset(payload):
+        if not isinstance(payload, dict):
             return False
-        execution = db.get(Execution, payload["execution_id"])
-        mission = db.get(MissionRecord, payload["mission_id"])
-        worker = db.get(Worker, payload["worker_name"])
+        if context.is_recovery:
+            execution_id = context.authority.execution_id
+            mission_id = context.mission_id
+            worker_name = None
+        else:
+            if not required.issubset(payload):
+                return False
+            execution_id = payload["execution_id"]
+            mission_id = payload["mission_id"]
+            worker_name = payload["worker_name"]
+        execution = db.get(Execution, execution_id)
+        mission = db.get(MissionRecord, mission_id)
+        worker = db.get(Worker, execution.worker_name if execution is not None else worker_name)
         if not execution or not mission or not worker:
             return False
-        if execution.status != "RETRYING" or mission.status != "RUNNING" or worker.status != "BUSY":
+        expected_execution_status = "RUNNING" if context.is_recovery else "RETRYING"
+        if execution.status != expected_execution_status or mission.status != "RUNNING" or worker.status != "BUSY":
+            return False
+        if (
+            execution.id != context.authority.execution_id
+            or execution.lease_owner != context.authority.lease_owner
+            or execution.lease_generation != context.authority.lease_generation
+        ):
             return False
         if execution.mission_id != mission.id or execution.worker_name != worker.name or worker.current_mission_id != mission.id:
             return False
@@ -124,11 +148,14 @@ class DistributionPublishWorkflow:
             if context is None:
                 return self._failure(values, "execution runtime authority is required")
             repository = DistributionRunRepository(db)
-            retry = self._trusted_retry(db, payload, run)
+            retry = self._trusted_retry(db, payload, run, context)
             if run.status == DistributionRunStatus.RETRY_WAIT.value:
                 if not retry:
                     return self._failure(values, "validation error: distribution retry is not coordinator-owned")
                 run = self._owned_set(repository, run, context, "RUNNING")
+            elif run.status == DistributionRunStatus.RUNNING.value and context.is_recovery and retry:
+                # RUNNING is the durable pre-submit boundary and may resume safely.
+                pass
             elif run.status != DistributionRunStatus.CREATED.value:
                 return self._failure(values, "validation error: distribution run is not executable")
 
@@ -181,7 +208,9 @@ class DistributionPublishWorkflow:
 
             category = result.failure_category or DistributionFailureCategory.UNKNOWN_PERMANENT
             message = DistributionFailureAdapter.to_classifier_text(category)
-            status = "RECONCILIATION_REQUIRED" if category is DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT else "RETRY_WAIT" if category.retryable else "FAILED"
+            if category.retryable:
+                return self._safe_retry_failure(values, category, message)
+            status = "RECONCILIATION_REQUIRED" if category is DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT else "FAILED"
             self._owned_set(repository, run, context, status, category=category.value, error=message)
             return self._failure(values, message)
         finally:

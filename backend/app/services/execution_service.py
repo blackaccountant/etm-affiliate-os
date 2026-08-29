@@ -127,13 +127,8 @@ class ExecutionService:
             limit=limit
         )
 
+    def claim_due_retry(self, execution_id: int):
+        return self.repository.claim_due_retry(execution_id)
 
-
-    def claim_retry(
-        self,
-        execution,
-    ):
-
-        return self.repository.claim_retry(
-            execution
-        )
+    def restore_due_retry_claim(self, execution_id: int, error: str) -> bool:
+        return self.repository.restore_due_retry_claim(execution_id, error)
