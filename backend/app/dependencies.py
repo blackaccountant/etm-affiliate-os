@@ -10,6 +10,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.database.session import SessionLocal
+from app.mission.manager import MissionManager
 from app.repositories.product_repository import ProductRepository
 from app.services.product_service import ProductService
 from app.repositories.product_intelligence_history_repository import (
@@ -104,6 +105,13 @@ def get_execution_service(
 
 def get_discovery_run_repository(db: Session = Depends(get_db)) -> DiscoveryRunRepository:
     return DiscoveryRunRepository(db)
+
+
+def get_discovery_mission_manager() -> MissionManager:
+    """Resolve the shared production MissionManager without constructing a duplicate."""
+    from app.system import routes as system_routes
+
+    return system_routes.mission_manager
 
 
 def get_discovery_query_service(db: Session = Depends(get_db)) -> DiscoveryQueryService:

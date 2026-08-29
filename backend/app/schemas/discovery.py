@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.discovery.contracts import DiscoveryInputType
 
@@ -93,6 +93,32 @@ class DiscoveryExecutionResponse(BaseModel):
     run: DiscoveryRunResponse
     ranked_candidate_ids: list[str]
     selected_candidate_ids: list[str]
+
+
+class DiscoveryMissionLaunchRequest(BaseModel):
+    top_n: int = Field(default=1, ge=1)
+    minimum_score: int = Field(default=40, ge=0, le=100)
+    minimum_evidence_confidence: int = Field(default=70, ge=0, le=100)
+
+    @field_validator("top_n", "minimum_score", "minimum_evidence_confidence", mode="before")
+    @classmethod
+    def reject_boolean_values(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("must be an integer")
+        return value
+
+
+class DiscoveryMissionLaunchResponse(_Response):
+    run_id: str
+    mission_id: str
+    mission_status: str
+    workflow: str
+    required_capability: str | None
+    idempotency_key: str
+    worker_name: str | None
+    result_success: bool | None
+    result_error: str | None
+    result_data: Any | None
 
 
 class DiscoveryRankingItemResponse(BaseModel):

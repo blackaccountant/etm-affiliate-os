@@ -3,10 +3,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 
-from app.dependencies import get_discovery_query_service, get_discovery_run_orchestration_service, get_discovery_run_repository
-from app.discovery.contracts import DiscoveryRunCreate
+from app.dependencies import get_discovery_mission_manager, get_discovery_query_service, get_discovery_run_orchestration_service, get_discovery_run_repository
+from app.discovery.contracts import DiscoveryRunCreate, DiscoveryRunStatus
+from app.mission.manager import MissionManager
 from app.repositories.discovery_run_repository import DiscoveryRunRepository
-from app.schemas.discovery import DiscoveryCandidateResponse, DiscoveryExecuteRequest, DiscoveryExecutionResponse, DiscoveryRankingItemResponse, DiscoveryRankingResponse, DiscoveryRunCreateRequest, DiscoveryRunResponse, DiscoverySelectedResponse, EvidenceObservationResponse
+from app.schemas.discovery import DiscoveryCandidateResponse, DiscoveryExecuteRequest, DiscoveryExecutionResponse, DiscoveryMissionLaunchRequest, DiscoveryMissionLaunchResponse, DiscoveryRankingItemResponse, DiscoveryRankingResponse, DiscoveryRunCreateRequest, DiscoveryRunResponse, DiscoverySelectedResponse, EvidenceObservationResponse
+from app.services.discovery_mission_launch_service import DiscoveryMissionLaunchService
 from app.services.discovery_query_service import DiscoveryQueryService
 from app.services.discovery_run_orchestration_service import DiscoveryRunOrchestrationService
 
@@ -70,6 +72,35 @@ def get_ranking(run_id: str, service: DiscoveryQueryService = Depends(get_discov
 def get_selected(run_id: str, service: DiscoveryQueryService = Depends(get_discovery_query_service)):
     _run_or_404(service, run_id)
     return DiscoverySelectedResponse(candidates=[DiscoveryCandidateResponse.model_validate(item) for item in service.selected(run_id)])
+
+
+@router.post("/runs/{run_id}/launch", response_model=DiscoveryMissionLaunchResponse)
+def launch_run(run_id: str, payload: DiscoveryMissionLaunchRequest, mission_manager: MissionManager = Depends(get_discovery_mission_manager)):
+    service = DiscoveryMissionLaunchService(mission_manager=mission_manager)
+    try:
+        result = service.launch(run_id, payload.top_n, payload.minimum_score, payload.minimum_evidence_confidence)
+    except ValueError as error:
+        message = str(error)
+        code = 404 if "does not exist" in message else 400 if "input_type" in message or "unsupported" in message else 422
+        raise HTTPException(status_code=code, detail=message) from error
+    except RuntimeError as error:
+        message = str(error)
+        if "already" in message or "requires explicit retry" in message:
+            raise HTTPException(status_code=409, detail=message) from error
+        raise
+
+    return DiscoveryMissionLaunchResponse(
+        run_id=result.discovery_run_id,
+        mission_id=result.mission_id,
+        mission_status=result.mission_status,
+        workflow=result.workflow,
+        required_capability=result.required_capability,
+        idempotency_key=result.idempotency_key,
+        worker_name=result.worker_name,
+        result_success=result.result_success,
+        result_error=result.result_error,
+        result_data=result.result_data,
+    )
 
 
 @router.get("/candidates/{candidate_id}", response_model=DiscoveryCandidateResponse)
