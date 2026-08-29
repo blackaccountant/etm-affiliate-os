@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     OPENAI_DEFAULT_MODEL: str = "gpt-5.5"
 
     DEFAULT_AI_PROVIDER: str = "openai"
+    CONTENT_AI_PROVIDER: str = "openai"
+    OPENAI_CONTENT_MODEL: str = "gpt-5.5"
+    OPENAI_CONTENT_TIMEOUT_SECONDS: float = 30.0
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    OLLAMA_CONTENT_MODEL: str = ""
+    OLLAMA_CONTENT_TIMEOUT_SECONDS: float = 30.0
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

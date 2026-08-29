@@ -25,3 +25,4 @@ from app.models.discovery import DiscoveryRun, DiscoveryCandidate, EvidenceObser
 from app.models.content_brief import ContentBrief
 from app.models.content_brief_evidence import ContentBriefEvidence
 from app.models.content_generation_run import ContentGenerationRun
+from app.models.generated_content_artifact import GeneratedContentArtifact
