@@ -90,15 +90,78 @@ class ContentBriefService:
             if evidence is None or evidence.candidate_id != candidate.id:
                 raise ValueError("evidence provenance is invalid for this brief")
 
+    @staticmethod
+    def _evidence_links(
+        evidence_observation_ids: list[str] | None,
+        usage_role: str,
+        evidence_links: list[dict[str, str]] | None,
+    ) -> list[dict[str, str]]:
+        """Normalize legacy single-role input and Phase 4C role-aware links."""
+        links = list(evidence_links or [])
+        if evidence_observation_ids:
+            links.extend(
+                {
+                    "evidence_observation_id": evidence_id,
+                    "usage_role": usage_role,
+                }
+                for evidence_id in evidence_observation_ids
+            )
+
+        allowed_roles = {item.value for item in EvidenceUsageRole}
+        normalized: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for link in links:
+            evidence_id = str(link.get("evidence_observation_id") or "").strip()
+            role = str(link.get("usage_role") or "").strip()
+            if not evidence_id or role not in allowed_roles:
+                raise ValueError("evidence links require a valid evidence_observation_id and usage_role")
+            key = (evidence_id, role)
+            if key not in seen:
+                seen.add(key)
+                normalized.append({"evidence_observation_id": evidence_id, "usage_role": role})
+        return normalized
+
+    def _reconcile_evidence_links(
+        self,
+        brief: ContentBrief,
+        candidate: DiscoveryCandidate,
+        evidence_links: list[dict[str, str]],
+    ) -> None:
+        evidence_ids = [item["evidence_observation_id"] for item in evidence_links]
+        self._validate_evidence_chain(candidate, evidence_ids)
+        existing = {
+            (link.evidence_observation_id, link.usage_role)
+            for link in self.db.query(ContentBriefEvidence).filter(ContentBriefEvidence.content_brief_id == brief.id).all()
+        }
+        for link in evidence_links:
+            key = (link["evidence_observation_id"], link["usage_role"])
+            if key not in existing:
+                self.db.add(
+                    ContentBriefEvidence(
+                        id=str(uuid4()),
+                        content_brief_id=brief.id,
+                        evidence_observation_id=key[0],
+                        usage_role=key[1],
+                        created_at=self._utc_now(),
+                    )
+                )
+                existing.add(key)
+
     def create_brief(self, *, discovery_run_id: str, discovery_candidate_id: str, content_type: str, channel_intent: str,
                      objective: str, audience_intent: str | None = None, audience_problem: str | None = None,
                      angle: str | None = None, call_to_action: str | None = None, tone: str | None = None,
                      required_disclosure: str | None = None, key_benefits: object | None = None,
                      proof_points: object | None = None, target_keywords: object | None = None,
                      constraints: object | None = None, evidence_observation_ids: list[str] | None = None,
-                     usage_role: str = EvidenceUsageRole.PRIMARY.value, status: str = ContentBriefStatus.CREATED.value) -> ContentBrief:
+                     usage_role: str = EvidenceUsageRole.PRIMARY.value, evidence_links: list[dict[str, str]] | None = None,
+                     status: str = ContentBriefStatus.CREATED.value,
+                     identity_proof_points: object | None = None) -> ContentBrief:
         run, candidate = self._validate_run_and_candidate(discovery_run_id, discovery_candidate_id)
-        self._validate_evidence_chain(candidate, evidence_observation_ids or [])
+        normalized_evidence_links = self._evidence_links(evidence_observation_ids, usage_role, evidence_links)
+        self._validate_evidence_chain(
+            candidate,
+            [item["evidence_observation_id"] for item in normalized_evidence_links],
+        )
         identity = self._brief_identity(
             discovery_candidate_id=candidate.id,
             content_type=content_type,
@@ -111,12 +174,19 @@ class ContentBriefService:
             tone=tone,
             required_disclosure=required_disclosure,
             key_benefits=key_benefits,
-            proof_points=proof_points,
+            proof_points=proof_points if identity_proof_points is None else identity_proof_points,
             target_keywords=target_keywords,
             constraints=constraints,
         )
         existing = self.db.query(ContentBrief).filter(ContentBrief.idempotency_key == identity).first()
         if existing is not None:
+            try:
+                self._reconcile_evidence_links(existing, candidate, normalized_evidence_links)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+            self.db.refresh(existing)
             return existing
 
         brief = ContentBrief(
@@ -151,20 +221,12 @@ class ContentBriefService:
                 return existing
             raise
 
-        if evidence_observation_ids:
-            for evidence_id in evidence_observation_ids:
-                evidence = self.db.get(EvidenceObservation, evidence_id)
-                if evidence is None or evidence.candidate_id != candidate.id:
-                    raise ValueError("evidence does not belong to the valid candidate provenance chain")
-                link = ContentBriefEvidence(
-                    id=str(uuid4()),
-                    content_brief_id=brief.id,
-                    evidence_observation_id=evidence.id,
-                    usage_role=usage_role,
-                    created_at=self._utc_now(),
-                )
-                self.db.add(link)
-        self.db.commit()
+        try:
+            self._reconcile_evidence_links(brief, candidate, normalized_evidence_links)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.refresh(brief)
         return brief
 
