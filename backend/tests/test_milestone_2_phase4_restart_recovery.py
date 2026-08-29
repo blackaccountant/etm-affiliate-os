@@ -263,17 +263,18 @@ def test_unexpected_retrying_status_is_requeued(db_session_factory):
     assert execution.status == "QUEUED" and mission.status == "RETRY_WAIT" and worker.status == "BUSY"
 
 
-def test_durable_release_failure_keeps_in_memory_worker_busy(db_session_factory, monkeypatch):
+def test_durable_release_fence_rolls_back_without_releasing_in_memory_worker(db_session_factory, monkeypatch):
     mission_id, execution_id = seed_retry(db_session_factory)
     session, coordinator, task, workforce = coordinator_for(
         db_session_factory, mission_id, execution_id, Engine({"success": True, "errors": []}),
     )
     monkeypatch.setattr(WorkerRepository, "release", lambda *args, **kwargs: False)
     try:
-        with pytest.raises(RuntimeError, match="Durable worker release failed"):
-            coordinator.execute(task)
+        assert coordinator.execute(task) is None
     finally:
         session.close()
+    mission, execution, worker = durable_state(db_session_factory, mission_id, execution_id)
+    assert (mission.status, execution.status, worker.status) == ("RUNNING", "RETRYING", "BUSY")
     assert workforce.get_worker("Product Hunter").status is WorkerStatus.BUSY
 
 

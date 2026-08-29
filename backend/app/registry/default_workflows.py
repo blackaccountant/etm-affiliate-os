@@ -17,6 +17,9 @@ from app.workflows.affiliate.product_discovery_workflow import (
 from app.workflows.affiliate.discovery_run_workflow import (
     AffiliateDiscoveryRunWorkflow,
 )
+from app.workflows.content.content_generation_workflow import ContentGenerationWorkflow
+from app.workflows.content.content_repurposing_workflow import ContentRepurposingWorkflow
+from app.workflows.distribution.distribution_publish_workflow import DistributionPublishWorkflow
 
 
 
@@ -52,6 +55,10 @@ def create_workflow_registry():
         AffiliateDiscoveryRunWorkflow(),
 
     )
+
+    registry.register("content_generate", ContentGenerationWorkflow())
+    registry.register("content_repurpose", ContentRepurposingWorkflow())
+    registry.register("distribution_publish", DistributionPublishWorkflow())
 
 
 

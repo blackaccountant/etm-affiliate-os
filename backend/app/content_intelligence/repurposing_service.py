@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from app.models.content_evaluation import ContentEvaluation
 from app.models.discovery import EvidenceObservation
 from app.models.generated_content_artifact import GeneratedContentArtifact
 from app.repositories.content_repurposing_run_repository import ContentRepurposingRunRepository
+from app.repositories.content_generation_run_repository import ContentGenerationRunRepository
 from app.repositories.generated_content_artifact_repository import GeneratedContentArtifactRepository
 from app.services.content_brief_service import ContentBriefService
 
@@ -57,7 +58,7 @@ class GroundedRepurposingValidator:
 
 
 class ContentRepurposingService:
-    _reserved = {"operation", "source_artifact_id", "source_evaluation_id", "target_content_type", "channel_intent"}
+    _reserved = {"operation", "source_artifact_id", "source_evaluation_id", "target_content_type", "channel_intent", "tone_constraints", "format_constraints"}
 
     def __init__(self, db: Session, provider_factory=ContentGenerationProviderFactory, prompt_builder=None, validator=None, evaluator=None):
         self.db = db
@@ -67,6 +68,7 @@ class ContentRepurposingService:
         self.evaluator = evaluator or ContentEvaluator(db)
         self.briefs = ContentBriefService(db)
         self.runs = ContentRepurposingRunRepository(db)
+        self.generation_runs = ContentGenerationRunRepository(db)
         self.artifacts = GeneratedContentArtifactRepository(db)
 
     @staticmethod
@@ -83,7 +85,7 @@ class ContentRepurposingService:
         caller = self._parameters(request.generation_parameters)
         if self._reserved.intersection(caller):
             raise ValueError("caller cannot override reserved repurposing parameters")
-        return {
+        parameters = {
             **caller,
             "operation": "repurpose",
             "source_artifact_id": request.source_artifact_id,
@@ -91,6 +93,24 @@ class ContentRepurposingService:
             "target_content_type": request.target_content_type,
             "channel_intent": request.channel_intent,
         }
+        for field in ("tone_constraints", "format_constraints"):
+            value = getattr(request, field)
+            if value is not None:
+                if not isinstance(value, str):
+                    raise ValueError(f"{field} must be text")
+                normalized = " ".join(value.split())
+                if not normalized:
+                    raise ValueError(f"{field} must not be blank")
+                parameters[field] = normalized
+        return parameters
+
+    @staticmethod
+    def _normalized_request(request, parameters):
+        return replace(
+            request,
+            tone_constraints=parameters.get("tone_constraints"),
+            format_constraints=parameters.get("format_constraints"),
+        )
 
     def _source(self, request):
         artifact = self.db.get(GeneratedContentArtifact, request.source_artifact_id)
@@ -123,7 +143,7 @@ class ContentRepurposingService:
     def _result(self, row, evaluation=None, failure=None):
         return ContentRepurposingResult(row.id, row.generation_run_id, row.result_artifact_id, evaluation.id if evaluation else None, row.status, evaluation.decision if evaluation else None, failure)
 
-    def repurpose(self, request) -> ContentRepurposingResult:
+    def repurpose(self, request, *, defer_retryable_failure=False, retry_resume=False) -> ContentRepurposingResult:
         if request.target_content_type not in {item.value for item in ContentType}:
             raise ValueError("unsupported target content type")
         if not isinstance(request.channel_intent, str) or not request.channel_intent.strip():
@@ -131,6 +151,7 @@ class ContentRepurposingService:
         artifact, evaluation, brief = self._source(request)
         whitelist, observations = self._whitelist(artifact, brief)
         parameters = self._canonical_parameters(request)
+        request = self._normalized_request(request, parameters)
         generation_run = self.briefs.create_generation_run(content_brief_id=brief.id, provider=request.provider, model=request.model, prompt_version=request.prompt_version, generation_parameters=parameters)
         row = self.runs.get_by_generation_run_id(generation_run.id)
         if row is None:
@@ -140,16 +161,23 @@ class ContentRepurposingService:
         if row.status == "COMPLETED":
             result_evaluation = self.evaluator.repo.get_by_identity(row.result_artifact_id, EVALUATOR_VERSION, POLICY_VERSION) if row.result_artifact_id else None
             return self._result(row, result_evaluation)
-        if row.status in {"RUNNING", "FAILED"}:
+        if row.status == "FAILED":
             return self._result(row)
+        if row.status == "RUNNING":
+            if not retry_resume or generation_run.status != "RETRY_WAIT":
+                return self._result(row)
+            generation_run = self.generation_runs.claim_retry_resume(generation_run.id)
+            if generation_run is None:
+                return self._result(row)
         try:
-            row.transition_to("RUNNING")
-            generation_run.transition_to("RUNNING")
-            self.db.commit()
+            if row.status == "CREATED":
+                row.transition_to("RUNNING")
+                generation_run.transition_to("RUNNING")
+                self.db.commit()
             prompt = self.prompt_builder.build(artifact, whitelist, request)
             provider_result = self.provider_factory.create(request.provider).generate(prompt, OUTPUT_SCHEMA, request.generation_parameters, request.model)
             if not provider_result.success:
-                return self._fail(row, generation_run, provider_result.failure or ProviderFailure(ProviderFailureCategory.UNKNOWN_PROVIDER_ERROR, "content provider failed"))
+                return self._fail(row, generation_run, provider_result.failure or ProviderFailure(ProviderFailureCategory.UNKNOWN_PROVIDER_ERROR, "content provider failed"), defer_retryable_failure=defer_retryable_failure)
             self.validator.validate(brief, provider_result.content, whitelist, observations)
             result_artifact = self.artifacts.create(generation_run_id=generation_run.id, content_brief_id=brief.id, content_type=request.target_content_type, title=provider_result.content.title, hook=provider_result.content.hook, body=provider_result.content.body, call_to_action=provider_result.content.cta, affiliate_disclosure=provider_result.content.disclosure, claims=[{"text": claim.text, "source_evidence_ids": list(claim.source_evidence_ids), "claim_kind": claim.claim_kind} for claim in provider_result.content.claims], status="GENERATED")
             row.result_artifact_id = result_artifact.id
@@ -161,12 +189,12 @@ class ContentRepurposingService:
         except Exception:
             return self._fail(row, generation_run, ProviderFailure(ProviderFailureCategory.MALFORMED_OUTPUT, "Repurposed content failed structural validation"))
 
-    def _fail(self, row, generation_run, failure):
+    def _fail(self, row, generation_run, failure, *, defer_retryable_failure=False):
         row.error_summary = failure.safe_message
-        if row.status == "RUNNING":
+        if row.status == "RUNNING" and not (defer_retryable_failure and failure.retryable):
             row.transition_to("FAILED")
         generation_run.error_summary = failure.safe_message
         if generation_run.status == "RUNNING":
-            generation_run.transition_to("FAILED")
+            generation_run.transition_to("RETRY_WAIT" if defer_retryable_failure and failure.retryable else "FAILED")
         self.db.commit()
         return self._result(row, failure=failure)

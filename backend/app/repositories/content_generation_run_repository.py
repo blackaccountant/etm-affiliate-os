@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models.content_generation_run import ContentGenerationRun
@@ -49,3 +50,17 @@ class ContentGenerationRunRepository:
 
     def get_by_idempotency_key(self, idempotency_key: str) -> ContentGenerationRun | None:
         return self.db.query(ContentGenerationRun).filter(ContentGenerationRun.idempotency_key == idempotency_key).first()
+
+    def claim_retry_resume(self, run_id: str) -> ContentGenerationRun | None:
+        """Atomically claim the sole legal RETRY_WAIT -> RUNNING transition."""
+        now = self._utc_now()
+        claimed = self.db.execute(
+            update(ContentGenerationRun)
+            .where(ContentGenerationRun.id == run_id)
+            .where(ContentGenerationRun.status == "RETRY_WAIT")
+            .values(status="RUNNING", updated_at=now)
+        )
+        self.db.commit()
+        if claimed.rowcount != 1:
+            return None
+        return self.get_by_id(run_id)

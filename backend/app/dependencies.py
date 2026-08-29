@@ -28,6 +28,9 @@ from app.services.execution_service import (
     ExecutionService,
 )
 from app.repositories.discovery_run_repository import DiscoveryRunRepository
+from app.repositories.content_generation_run_repository import ContentGenerationRunRepository
+from app.repositories.content_repurposing_run_repository import ContentRepurposingRunRepository
+from app.repositories.generated_content_artifact_repository import GeneratedContentArtifactRepository
 from app.services.discovery_query_service import DiscoveryQueryService
 from app.services.discovery_run_orchestration_service import DiscoveryRunOrchestrationService
 
@@ -112,6 +115,25 @@ def get_discovery_mission_manager() -> MissionManager:
     from app.system import routes as system_routes
 
     return system_routes.mission_manager
+
+
+def get_content_mission_manager() -> MissionManager:
+    """Resolve the shared runtime MissionManager for content launch routes."""
+    from app.system import routes as system_routes
+
+    return system_routes.mission_manager
+
+
+def get_content_generation_run_repository(db: Session = Depends(get_db)) -> ContentGenerationRunRepository:
+    return ContentGenerationRunRepository(db)
+
+
+def get_content_repurposing_run_repository(db: Session = Depends(get_db)) -> ContentRepurposingRunRepository:
+    return ContentRepurposingRunRepository(db)
+
+
+def get_generated_content_artifact_repository(db: Session = Depends(get_db)) -> GeneratedContentArtifactRepository:
+    return GeneratedContentArtifactRepository(db)
 
 
 def get_discovery_query_service(db: Session = Depends(get_db)) -> DiscoveryQueryService:

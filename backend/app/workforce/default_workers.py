@@ -52,6 +52,7 @@ def create_default_workers():
             worker_type="AI Agent",
             capabilities=[
                 "content_generation",
+                "content_distribution",
                 "seo_content",
                 "product_reviews",
             ],

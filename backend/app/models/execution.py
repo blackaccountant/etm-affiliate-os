@@ -138,3 +138,8 @@ class Execution(Base):
         Text,
         nullable=True,
     )
+
+    # Durable execution authority for crash-safe running-work recovery.
+    lease_owner = Column(String(64), nullable=True, index=True)
+    lease_generation = Column(Integer, nullable=False, default=0)
+    lease_expires_at = Column(DateTime(timezone=True), nullable=True, index=True)

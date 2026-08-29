@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     OLLAMA_CONTENT_MODEL: str = ""
     OLLAMA_CONTENT_TIMEOUT_SECONDS: float = 30.0
+    EXECUTION_LEASE_SECONDS: int = 90
+    EXECUTION_HEARTBEAT_SECONDS: int = 30
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

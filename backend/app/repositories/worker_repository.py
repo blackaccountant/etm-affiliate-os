@@ -95,6 +95,7 @@ class WorkerRepository:
         worker_name: str,
         mission_id: str,
         success: bool,
+        commit: bool = True,
     ) -> bool:
         """Atomically release an owned worker and advance terminal metrics once."""
         now = self._utc_now()
@@ -116,5 +117,8 @@ class WorkerRepository:
                 last_released_at=now,
             )
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return result.rowcount == 1

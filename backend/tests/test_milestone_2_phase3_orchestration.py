@@ -148,17 +148,18 @@ def test_transition_missing_record_preserves_domain_state(db_session_factory):
     assert mission.status is MissionStatus.CREATED
 
 
-def test_release_failure_keeps_runtime_worker_busy_and_writes_no_result(db_session_factory, monkeypatch):
+def test_release_fence_keeps_runtime_worker_busy_and_writes_no_result(db_session_factory, monkeypatch):
     runtime = SimpleNamespace(memory=MemoryBus())
     manager, workforce = make_manager(db_session_factory, [online_worker()], runtime)
     manager.executor.engine = Engine(successful_result())
     monkeypatch.setattr(WorkerRepository, "release", lambda *args, **kwargs: False)
 
-    with pytest.raises(RuntimeError, match="Durable worker release failed"):
-        manager.launch("Mission", "Objective", "test_workflow")
+    launch = manager.launch("Mission", "Objective", "test_workflow")
 
     assert workforce.get_worker("Worker").status is WorkerStatus.BUSY
     assert runtime.memory.get("latest_mission_result") is None
+    mission, execution, worker = records(db_session_factory, launch["mission"].id)
+    assert (mission.status, execution.status, worker.status) == ("RUNNING", "RUNNING", "BUSY")
 
 
 def test_retryable_workflow_failure_keeps_durable_ownership(db_session_factory):
@@ -216,9 +217,7 @@ def test_retryable_python_exception_uses_existing_executor_contract(db_session_f
 
     assert mission.status == "RETRY_WAIT" and execution.status == "QUEUED"
     assert worker.status == "BUSY" and workforce.get_worker("Worker").status is WorkerStatus.BUSY
-    # TaskExecutor returns None for a scheduled exception retry, so this is the
-    # best metadata currently available to MissionManager without changing it.
-    assert execution.error == "Mission execution failed." and execution.failure_type == "UNKNOWN"
+    assert execution.error == "network timeout" and execution.failure_type is not None
 
 
 def test_terminal_python_exception_cleans_up_then_reraises(db_session_factory, monkeypatch):

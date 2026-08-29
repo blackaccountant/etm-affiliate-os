@@ -3,7 +3,6 @@
 import json
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
-from time import perf_counter
 
 from app.database.session import SessionLocal
 from app.executor.executor import TaskExecutor
@@ -15,8 +14,9 @@ from app.mission.status import MissionStatus, validate_mission_transition
 from app.repositories.execution_repository import ExecutionRepository
 from app.repositories.mission_repository import MissionRepository
 from app.repositories.worker_repository import WorkerRepository
-from app.retry.failure_classifier import FailureClassifier
 from app.scheduler.scheduler import Scheduler
+from app.services.execution_attempt_runner import ExecutionAttemptRunner
+from app.services.running_execution_recovery_service import RunningExecutionRecoveryService
 from app.workforce.manager import WorkforceManager
 
 
@@ -28,7 +28,6 @@ class MissionManager:
         self.runtime = runtime
         self.executor = TaskExecutor(runtime=runtime)
         self.workforce = workforce if workforce is not None else WorkforceManager()
-        self.failure_classifier = FailureClassifier()
         self.session_factory = session_factory if session_factory is not None else SessionLocal
 
     @contextmanager
@@ -99,70 +98,11 @@ class MissionManager:
         mission.status = target_status
         mission.updated_at = record.updated_at
 
-    def _release_terminal_worker(self, repository, worker, mission, success):
-        if not repository.release(worker.name, mission.id, success=success):
-            raise RuntimeError(
-                f"Durable worker release failed for worker {worker.name} and mission {mission.id}"
-            )
-        self.workforce.release(worker.name, success=success)
-
-    def _finalize(self, mission, worker, task, execution, repositories, result, duration):
-        missions, workers, executions = repositories
-        success = self._success(result)
-        errors = self._errors(result) or []
-        error = None if success else "; ".join(map(str, errors)) or "Mission execution failed."
-        failure = self.failure_classifier.classify(error) if not success else {}
-        retrying = (
-            not success
-            and task.status == "QUEUED"
-            and 0 < task.retry_count < task.max_retries
-        )
-        payload = self._normalize(result) if result is not None else {"success": False, "error": error}
-        serialized = json.dumps(payload, default=str)
-        next_retry_at = None
-        if success:
-            executions.complete(execution, duration, serialized)
-            self._transition(mission, missions, MissionStatus.COMPLETED,
-                             result_data=payload, last_error=None,
-                             current_worker_name=None)
-            self._release_terminal_worker(workers, worker, mission, success=True)
-        elif retrying:
-            execution.result_data = serialized
-            next_retry_at = self.executor.retry_policy.calculate_next_retry(task)
-            executions.schedule_retry(execution, task.retry_count, task.max_retries,
-                next_retry_at, failure.get("failure_type"), error)
-            self._transition(mission, missions, MissionStatus.RETRY_WAIT,
-                             result_data=payload, last_error=error,
-                             current_worker_name=worker.name)
-        else:
-            execution.result_data = serialized
-            executions.fail(execution, error, failure.get("failure_type"), duration, task.retry_count)
-            self._transition(mission, missions, MissionStatus.FAILED,
-                             result_data=payload, last_error=error,
-                             current_worker_name=None)
-            self._release_terminal_worker(workers, worker, mission, success=False)
-        if self.runtime:
-            self.runtime.memory.store("latest_mission_result", {
-                "mission_id": mission.id,
-                "mission": mission.name,
-                "workflow": mission.workflow,
-                "worker": worker.name,
-                "success": success and not retrying,
-                "status": "COMPLETED" if success else "QUEUED" if retrying else "FAILED",
-                "retry_count": task.retry_count,
-                "max_retries": task.max_retries,
-                "failure_type": failure.get("failure_type"),
-                "retryable": failure.get("retryable", False),
-                "next_retry_at": next_retry_at,
-                "data": result,
-            })
-        return MissionResult(mission.id, success and not retrying, result, error)
-
     def execute(self, mission, worker=None):
         if worker is None:
             return None
         with self._operation() as db:
-            missions, workers, executions = MissionRepository(db), WorkerRepository(db), ExecutionRepository(db)
+            missions, executions = MissionRepository(db), ExecutionRepository(db)
             self._transition(mission, missions, MissionStatus.RUNNING, current_worker_name=worker.name)
             task = self.scheduler.schedule(mission.workflow, dict(mission.metadata))
             task = self.scheduler.next_task()  # Consume the directly executed task.
@@ -170,20 +110,100 @@ class MissionManager:
             execution = executions.create(mission.workflow, "RUNNING", mission.id, mission.name,
                 worker.name, input_data=json.dumps(mission.metadata, default=str),
                 max_retries=task.max_retries)
-            started = perf_counter()
+            execution_id = execution.id
+        attempt = ExecutionAttemptRunner(
+            self.session_factory, self.executor, workforce=self.workforce,
+        ).execute(
+            execution_id=execution_id, mission_id=mission.id, mission_name=mission.name,
+            worker_name=worker.name, task=task,
+        )
+        if attempt.ownership_lost:
+            return MissionResult(mission.id, False, attempt.result, "Execution lease ownership was lost.")
+        mission.status = (
+            MissionStatus.RETRY_WAIT if attempt.lifecycle_status == "QUEUED"
+            else MissionStatus(attempt.lifecycle_status)
+        )
+        success = attempt.lifecycle_status == "COMPLETED"
+        error = str(attempt.error) if attempt.error else None
+        if self.runtime and getattr(self.runtime, "memory", None):
+            self.runtime.memory.store("latest_mission_result", {
+                "mission_id": mission.id,
+                "mission": mission.name,
+                "workflow": mission.workflow,
+                "worker": worker.name,
+                "success": success,
+                "status": attempt.lifecycle_status,
+                "retry_count": task.retry_count,
+                "max_retries": task.max_retries,
+                "data": attempt.result,
+            })
+        mission_result = MissionResult(mission.id, success, attempt.result, error)
+        self.results.add(mission_result)
+        if attempt.error is not None:
+            raise attempt.error
+        return mission_result
+
+    def resume_recovered_mission(self, recovered):
+        """Dispatch one committed replacement without creating a Mission.
+
+        Recovery context is intentionally injected here, after the durable
+        mission payload is read, rather than accepted from caller input.
+        """
+        with self._operation() as db:
+            missions = MissionRepository(db)
+            workers = WorkerRepository(db)
+            executions = ExecutionRepository(db)
+            mission = missions.get_by_id(recovered.mission_id)
+            execution = executions.get_by_id(recovered.replacement_execution_id)
+            durable_worker = workers.get_by_name(recovered.worker_name)
+            if (
+                mission is None
+                or mission.status != MissionStatus.RUNNING.value
+                or execution is None
+                or execution.mission_id != mission.id
+                or execution.workflow_name != mission.workflow_name
+                or durable_worker is None
+                or durable_worker.current_mission_id != mission.id
+            ):
+                raise RuntimeError("recovered execution no longer has durable mission ownership")
             try:
-                result = self.executor.execute(task)
-            except Exception as exc:
-                task.mark_failed()
-                result = {"success": False, "errors": [str(exc)]}
-                mission_result = self._finalize(mission, worker, task, execution,
-                    (missions, workers, executions), result, perf_counter() - started)
-                self.results.add(mission_result)
-                raise
-            mission_result = self._finalize(mission, worker, task, execution,
-                (missions, workers, executions), result, perf_counter() - started)
-            self.results.add(mission_result)
-            return mission_result
+                payload = json.loads(mission.input_data or "{}")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                payload = {"input_data": mission.input_data}
+            if not isinstance(payload, dict):
+                payload = {"input_data": payload}
+            payload = dict(payload)
+            payload["execution_recovery"] = True
+            payload["recovered_execution_id"] = recovered.abandoned_execution_id
+            task = self.scheduler.schedule(execution.workflow_name, payload)
+            task = self.scheduler.next_task()
+            task.retry_count = execution.retry_count
+            task.max_retries = execution.max_retries
+            task.assign_worker(self.workforce.sync_from_durable(durable_worker, mission.name))
+
+        attempt = ExecutionAttemptRunner(
+            self.session_factory, self.executor, workforce=self.workforce,
+        ).execute(
+            execution_id=recovered.replacement_execution_id,
+            mission_id=recovered.mission_id, mission_name=recovered.mission_name,
+            worker_name=recovered.worker_name, task=task,
+            authority=recovered.authority,
+        )
+        if attempt.ownership_lost:
+            return MissionResult(recovered.mission_id, False, attempt.result, "Execution lease ownership was lost.")
+        result = MissionResult(
+            recovered.mission_id, attempt.lifecycle_status == "COMPLETED",
+            attempt.result, str(attempt.error) if attempt.error else None,
+        )
+        self.results.add(result)
+        if attempt.error is not None:
+            raise attempt.error
+        return result
+
+    def recover_expired_execution(self, execution_id):
+        """Recover one durable attempt and dispatch its replacement exactly once."""
+        recovery = RunningExecutionRecoveryService(self.session_factory)
+        return recovery.recover_and_dispatch(execution_id, self.resume_recovered_mission)
 
     def launch(self, name, objective, workflow, metadata=None, required_capability=None,
                idempotency_key=None):

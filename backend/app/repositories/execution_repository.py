@@ -5,11 +5,16 @@ Handles storing and retrieving workflow
 and mission execution history.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.models.execution import Execution
+from app.services.execution_lease import ExecutionLeaseAuthority
+
+
+class ExecutionLeaseLostError(RuntimeError):
+    """Raised when a stale runtime no longer owns an active Execution lease."""
 
 
 class ExecutionRepository:
@@ -133,6 +138,83 @@ class ExecutionRepository:
 
 
         return execution
+
+    def acquire_lease(self, authority: ExecutionLeaseAuthority, lease_seconds: int) -> bool:
+        """Acquire an active-attempt lease at the durable ownership boundary."""
+        expiry = self._utc_now() + timedelta(seconds=lease_seconds)
+        updated = self.db.query(Execution).filter(Execution.id == authority.execution_id).filter(Execution.status.in_(("RUNNING", "RETRYING"))).filter(Execution.lease_owner.is_(None)).filter(Execution.lease_generation == authority.lease_generation - 1).update({Execution.lease_owner: authority.lease_owner, Execution.lease_generation: authority.lease_generation, Execution.lease_expires_at: expiry}, synchronize_session=False)
+        self.db.commit()
+        return updated == 1
+
+    def renew_lease(self, authority: ExecutionLeaseAuthority, lease_seconds: int) -> bool:
+        expiry = self._utc_now() + timedelta(seconds=lease_seconds)
+        updated = self.db.query(Execution).filter(Execution.id == authority.execution_id, Execution.status.in_(("RUNNING", "RETRYING")), Execution.lease_owner == authority.lease_owner, Execution.lease_generation == authority.lease_generation).update({Execution.lease_expires_at: expiry}, synchronize_session=False)
+        self.db.commit()
+        return updated == 1
+
+    def _fenced_terminal(self, authority, values, *, commit=True):
+        """Apply a fenced execution mutation without owning the outer transaction.
+
+        ``commit=False`` is the lifecycle-coordinator path: the Execution,
+        Mission, and Worker updates then share one transaction.
+        """
+        updated = self.db.query(Execution).filter(
+            Execution.id == authority.execution_id,
+            Execution.status.in_(("RUNNING", "RETRYING")),
+            Execution.lease_owner == authority.lease_owner,
+            Execution.lease_generation == authority.lease_generation,
+        ).update(values, synchronize_session=False)
+        if updated != 1:
+            raise ExecutionLeaseLostError("execution lease ownership was lost")
+        self.db.flush()
+        if commit:
+            self.db.commit()
+            return self.get_by_id(authority.execution_id)
+        return None
+
+    def complete_owned(self, authority: ExecutionLeaseAuthority, *, duration=0.0,
+                       result_data=None, commit=True):
+        return self._fenced_terminal(authority, {
+            Execution.status: "COMPLETED",
+            Execution.completed_at: self._utc_now(),
+            Execution.duration: duration,
+            Execution.result_data: result_data,
+            Execution.next_retry_at: None,
+            Execution.failure_type: None,
+            Execution.error: None,
+            Execution.lease_expires_at: None,
+        }, commit=commit)
+
+    def fail_owned(self, authority: ExecutionLeaseAuthority, *, error,
+                   failure_type=None, duration=0.0, retry_count=None, commit=True):
+        values = {
+            Execution.status: "FAILED",
+            Execution.completed_at: self._utc_now(),
+            Execution.duration: duration,
+            Execution.error: error,
+            Execution.failure_type: failure_type,
+            Execution.next_retry_at: None,
+            Execution.lease_expires_at: None,
+        }
+        if retry_count is not None:
+            values[Execution.retry_count] = retry_count
+        return self._fenced_terminal(authority, values, commit=commit)
+
+    def schedule_retry_owned(self, authority: ExecutionLeaseAuthority, *, retry_count,
+                             max_retries, next_retry_at, failure_type=None,
+                             error=None, result_data=None, commit=True):
+        return self._fenced_terminal(authority, {
+            Execution.status: "QUEUED",
+            Execution.completed_at: None,
+            Execution.retry_count: retry_count,
+            Execution.max_retries: max_retries,
+            Execution.next_retry_at: self._normalize_utc(next_retry_at),
+            Execution.failure_type: failure_type,
+            Execution.error: error,
+            Execution.result_data: result_data,
+            Execution.lease_owner: None,
+            Execution.lease_expires_at: None,
+        }, commit=commit)
 
 
     # ==================================================
