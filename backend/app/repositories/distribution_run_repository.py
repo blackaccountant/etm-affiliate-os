@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from sqlalchemy import exists, func
+from sqlalchemy import exists, func, literal
 
 from app.models.distribution_run import DistributionRun
 from app.models.execution import Execution
@@ -39,6 +39,57 @@ class DistributionRunRepository:
             .limit(batch_size)
             .all()
         )
+
+    def cancel_scheduled(self, run_id: str) -> DistributionRun:
+        """Cancel one locked, not-yet-activated scheduled business intent."""
+        run = (
+            self.db.query(DistributionRun)
+            .filter(DistributionRun.id == run_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if run is None:
+            raise ValueError("distribution run does not exist")
+        if run.status == "CANCELLED":
+            return run
+        if run.status != "SCHEDULED":
+            raise ValueError("only scheduled distribution runs can be cancelled")
+        run.status = "CANCELLED"
+        run.updated_at = self._now()
+        self.db.flush()
+        return run
+
+    def reschedule_scheduled(self, run_id: str, scheduled_for) -> DistributionRun:
+        """Move one locked scheduled intent only when the database says it is future."""
+        run = (
+            self.db.query(DistributionRun)
+            .filter(DistributionRun.id == run_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if run is None:
+            raise ValueError("distribution run does not exist")
+        if run.status != "SCHEDULED":
+            raise ValueError("only scheduled distribution runs can be rescheduled")
+
+        updated = (
+            self.db.query(DistributionRun)
+            .filter(DistributionRun.id == run_id)
+            .filter(DistributionRun.status == "SCHEDULED")
+            .filter(literal(scheduled_for) > func.now())
+            .update(
+                {
+                    DistributionRun.scheduled_for: scheduled_for,
+                    DistributionRun.updated_at: self._now(),
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated != 1:
+            raise ValueError("scheduled_for must be strictly future according to database time")
+        self.db.flush()
+        self.db.refresh(run)
+        return run
 
     @staticmethod
     def _now():
