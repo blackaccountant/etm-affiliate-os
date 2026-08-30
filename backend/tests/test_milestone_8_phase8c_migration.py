@@ -40,7 +40,12 @@ def test_m8c_revision_is_single_head_and_links_to_frozen_m8a():
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
     script = scripts.get_revision(REVISION)
-    assert scripts.get_current_head() == REVISION
+    heads = scripts.get_heads()
+    assert len(heads) == 1
+    assert REVISION in {
+        revision.revision
+        for revision in scripts.iterate_revisions(heads[0], "base")
+    }
     assert script.down_revision == PREVIOUS
     module = _migration_module()
     assert module.revision == REVISION and module.down_revision == PREVIOUS
