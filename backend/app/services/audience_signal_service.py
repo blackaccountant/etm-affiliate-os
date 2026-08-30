@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.audience.contracts import AudienceIntentStage, AudienceSignalError, AudienceSignalType
 from app.audience.normalization import aware_utc, canonical_json, evidence_set_fingerprint, normalize_topic, required_text, signal_extraction_key
+from app.audience.safety import AudienceSafetyError, validate_audience_topic
 from app.models.audience import AudienceSignal
 from app.repositories.audience_signal_repository import AudienceSignalRepository
 
@@ -29,7 +30,8 @@ class AudienceSignalService:
         if not isinstance(candidate.strength, int) or isinstance(candidate.strength, bool) or not 0 <= candidate.strength <= 100: self._fail("INVALID_STRENGTH", "strength must be 0..100")
         if not isinstance(candidate.confidence, int) or isinstance(candidate.confidence, bool) or not 0 <= candidate.confidence <= 100: self._fail("INVALID_CONFIDENCE", "confidence must be 0..100")
         slug, label = normalize_topic(candidate.topic, candidate.topic_label)
-        if any(term in slug for term in ("religion", "race", "ethnicity", "political", "health", "sexual-orientation")): self._fail("SENSITIVE_SIGNAL_BLOCKED", "sensitive targeting signal blocked")
+        try: validate_audience_topic(slug)
+        except AudienceSafetyError: self._fail("SENSITIVE_SIGNAL_BLOCKED", "sensitive targeting signal blocked")
         if candidate.rationale is not None and (not isinstance(candidate.rationale, str) or len(candidate.rationale) > 1000): self._fail("INVALID_PROVIDER_OUTPUT", "rationale is invalid")
         try:
             ruleset = required_text(candidate.ruleset_version, "ruleset_version")
