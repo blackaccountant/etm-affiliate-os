@@ -54,3 +54,4 @@ from app.models.crm import (
     PermissionEvent,
     SuppressionEvent,
 )
+from app.models.crm_relationships import LeadLifecycleEvent, LeadQualificationLink
