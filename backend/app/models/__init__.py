@@ -29,3 +29,10 @@ from app.models.generated_content_artifact import GeneratedContentArtifact
 from app.models.content_evaluation import ContentEvaluation
 from app.models.content_repurposing_run import ContentRepurposingRun
 from app.models.distribution_run import DistributionRun
+from app.models.audience import (
+    AudienceEvidence,
+    AudienceExternalIdentity,
+    AudienceObservation,
+    AudienceResearchRun,
+    AudienceSubject,
+)
