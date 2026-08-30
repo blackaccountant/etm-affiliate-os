@@ -93,3 +93,19 @@ def signal_extraction_key(*, subject_id: str | None, signal_type: str, topic_slu
     scope = f"subject:{subject_id}" if subject_id is not None else "subjectless"
     return _fingerprint("audience-signal-extraction-v1", scope, signal_type, topic_slug,
                         intent_stage or "", evidence_set, ruleset_version)
+
+
+def signal_extraction_input_fingerprint(*, observation_id: object, observation_key: object,
+                                        evidence: list[tuple[object, object]]) -> str:
+    """Identify the immutable observation and exact evidence snapshot consumed by extraction."""
+    observation_id = required_text(observation_id, "observation_id")
+    observation_key = required_text(observation_key, "observation_key")
+    if not evidence:
+        raise ValueError("evidence entries are required")
+    canonical = sorted(
+        f"{required_text(evidence_id, 'evidence_id')}:{required_text(evidence_fingerprint, 'evidence_fingerprint')}"
+        for evidence_id, evidence_fingerprint in evidence
+    )
+    if len(set(canonical)) != len(canonical):
+        raise ValueError("evidence entries must be unique")
+    return _fingerprint("audience-signal-extraction-input-v1", observation_id, observation_key, *canonical)
