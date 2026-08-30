@@ -39,6 +39,7 @@ def create_default_workers():
                 "web_research",
                 "competitor_analysis",
                 "data_collection",
+                "audience_signal_extraction",
             ],
             status=WorkerStatus.ONLINE,
         ),

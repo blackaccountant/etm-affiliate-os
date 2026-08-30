@@ -159,6 +159,25 @@ class ExecutionRepository:
         self.db.commit()
         return updated == 1
 
+    def verify_active_authority(self, authority: ExecutionLeaseAuthority):
+        """Fence business writes to the currently owned active Execution."""
+        execution = (
+            self.db.query(Execution)
+            .filter(
+                Execution.id == authority.execution_id,
+                Execution.status.in_(("RUNNING", "RETRYING")),
+                Execution.lease_owner == authority.lease_owner,
+                Execution.lease_generation == authority.lease_generation,
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+        if execution is None or execution.lease_expires_at is None:
+            raise ExecutionLeaseLostError("execution lease ownership was lost")
+        if self._normalize_utc(execution.lease_expires_at) <= self._utc_now():
+            raise ExecutionLeaseLostError("execution lease has expired")
+        return execution
+
     def _fenced_terminal(self, authority, values, *, commit=True):
         """Apply a fenced execution mutation without owning the outer transaction.
 
