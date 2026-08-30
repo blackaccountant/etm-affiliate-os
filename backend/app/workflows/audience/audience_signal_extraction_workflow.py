@@ -96,6 +96,6 @@ class AudienceSignalExtractionWorkflow:
             return self._failure(values, str(error))
         except Exception:
             db.rollback()
-            return self._failure(values, "audience signal extraction failed")
+            raise
         finally:
             db.close()
