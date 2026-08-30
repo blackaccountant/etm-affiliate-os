@@ -93,6 +93,7 @@ class ExecutionRepository:
         next_retry_at=None,
         failure_type: str = None,
         error: str = None,
+        commit: bool = True,
     ):
 
         execution = Execution(
@@ -133,20 +134,23 @@ class ExecutionRepository:
             execution
         )
 
-        self.db.commit()
-
-        self.db.refresh(
-            execution
-        )
+        if commit:
+            self.db.commit()
+            self.db.refresh(execution)
+        else:
+            self.db.flush()
 
 
         return execution
 
-    def acquire_lease(self, authority: ExecutionLeaseAuthority, lease_seconds: int) -> bool:
+    def acquire_lease(self, authority: ExecutionLeaseAuthority, lease_seconds: int, commit: bool = True) -> bool:
         """Acquire an active-attempt lease at the durable ownership boundary."""
         expiry = self._utc_now() + timedelta(seconds=lease_seconds)
         updated = self.db.query(Execution).filter(Execution.id == authority.execution_id).filter(Execution.status.in_(("RUNNING", "RETRYING"))).filter(Execution.lease_owner.is_(None)).filter(Execution.lease_generation == authority.lease_generation - 1).update({Execution.lease_owner: authority.lease_owner, Execution.lease_generation: authority.lease_generation, Execution.lease_expires_at: expiry}, synchronize_session=False)
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return updated == 1
 
     def renew_lease(self, authority: ExecutionLeaseAuthority, lease_seconds: int) -> bool:

@@ -41,6 +41,7 @@ class MissionRepository:
         current_worker_name: str | None = None,
         result_data=None,
         last_error: str | None = None,
+        commit: bool = True,
     ) -> MissionRecord:
         """Create a mission or return its idempotent predecessor.
 
@@ -66,7 +67,10 @@ class MissionRepository:
         self.db.add(record)
 
         try:
-            self.db.commit()
+            if commit:
+                self.db.commit()
+            else:
+                self.db.flush()
         except IntegrityError:
             self.db.rollback()
             if idempotency_key is None:
@@ -76,7 +80,8 @@ class MissionRepository:
                 raise
             return existing
 
-        self.db.refresh(record)
+        if commit:
+            self.db.refresh(record)
         return record
 
     def get_by_id(self, mission_id: str) -> MissionRecord | None:

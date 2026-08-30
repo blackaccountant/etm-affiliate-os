@@ -31,6 +31,9 @@ def register_default_participants() -> None:
     if _registry.get("distribution_publish") is None:
         from app.distribution.distribution_publish_lifecycle_participant import DistributionPublishLifecycleParticipant
         _registry.register("distribution_publish", DistributionPublishLifecycleParticipant())
+    if _registry.get("distribution_reconcile") is None:
+        from app.distribution.distribution_reconcile_lifecycle_participant import DistributionReconcileLifecycleParticipant
+        _registry.register("distribution_reconcile", DistributionReconcileLifecycleParticipant())
 
 
 register_default_participants()

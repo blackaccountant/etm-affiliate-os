@@ -3,14 +3,18 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+from uuid import uuid4
 
 from sqlalchemy import update
 
+from app.core.config import settings
 from app.mission.status import MissionStatus
 from app.models.mission_record import MissionRecord
 from app.models.worker import Worker
 from app.repositories.execution_repository import ExecutionLeaseLostError, ExecutionRepository
+from app.repositories.mission_repository import MissionRepository
 from app.repositories.worker_repository import WorkerRepository
+from app.services.execution_lease import ExecutionLeaseAuthority
 from app.workforce.status import WorkerStatus
 
 
@@ -18,6 +22,29 @@ from app.workforce.status import WorkerStatus
 class OwnedLifecycleResult:
     status: str
     mission_status: MissionStatus
+    successor: object | None = None
+
+
+@dataclass(frozen=True)
+class SuccessorOperationSpec:
+    """Trusted, runtime-only description of a new durable operation."""
+
+    name: str
+    objective: str
+    workflow: str
+    required_capability: str | None
+    idempotency_key: str
+    payload: dict
+
+
+@dataclass(frozen=True)
+class SuccessorOperation:
+    spec: SuccessorOperationSpec
+    mission_id: str
+    mission_name: str
+    worker_name: str
+    execution_id: int
+    authority: ExecutionLeaseAuthority
 
 
 class OwnedExecutionLifecycleCoordinator:
@@ -83,9 +110,36 @@ class OwnedExecutionLifecycleCoordinator:
             if durable_worker is not None:
                 self.workforce.sync_from_durable(durable_worker, mission_name)
 
+    def _activate_successor(self, spec: SuccessorOperationSpec, preferred_worker_name: str):
+        """Create a separately owned active operation without reopening its predecessor."""
+        missions = MissionRepository(self.db)
+        workers = WorkerRepository(self.db)
+        successor = missions.create(
+            mission_id=str(uuid4()), name=spec.name, objective=spec.objective,
+            workflow_name=spec.workflow, input_data=spec.payload,
+            required_capability=spec.required_capability, idempotency_key=spec.idempotency_key,
+            commit=False,
+        )
+        if successor.status != MissionStatus.CREATED.value:
+            raise RuntimeError("successor operation already exists")
+        if not workers.claim(preferred_worker_name, successor.id, commit=False):
+            raise RuntimeError("successor worker could not be claimed")
+        successor.status = MissionStatus.RUNNING.value
+        successor.current_worker_name = preferred_worker_name
+        successor.updated_at = self._now()
+        execution = self.executions.create(
+            spec.workflow, "RUNNING", successor.id, successor.name, preferred_worker_name,
+            input_data=json.dumps(spec.payload), commit=False,
+        )
+        authority = ExecutionLeaseAuthority.fresh(execution.id, 1)
+        if not self.executions.acquire_lease(authority, settings.EXECUTION_LEASE_SECONDS, commit=False):
+            raise RuntimeError("successor execution lease could not be acquired")
+        return SuccessorOperation(spec, successor.id, successor.name, preferred_worker_name, execution.id, authority)
+
     def complete(self, authority, *, mission_id, mission_name, worker_name,
-                 duration, result_data, result_payload):
+                 duration, result_data, result_payload, participant=None):
         try:
+            spec = participant.apply(self.db, authority, "COMPLETED", result_payload) if participant is not None else None
             self.executions.complete_owned(
                 authority, duration=duration, result_data=result_data, commit=False,
             )
@@ -94,11 +148,12 @@ class OwnedExecutionLifecycleCoordinator:
                 result_data=result_payload, last_error=None,
             )
             self._release_worker(worker_name, mission_id, success=True)
+            successor = self._activate_successor(spec, worker_name) if spec is not None else None
             self._commit_and_sync(worker_name, mission_name)
         except Exception:
             self.db.rollback()
             raise
-        return OwnedLifecycleResult("COMPLETED", MissionStatus.COMPLETED)
+        return OwnedLifecycleResult("COMPLETED", MissionStatus.COMPLETED, successor)
 
     def fail(self, authority, *, mission_id, mission_name, worker_name,
              duration, result_data, result_payload, error, failure_type, retry_count,

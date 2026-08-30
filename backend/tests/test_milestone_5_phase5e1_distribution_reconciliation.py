@@ -104,7 +104,7 @@ def test_normal_claim_is_conditional_and_exactly_one_claimant(db_session, db_ses
     ("outcome", "expected"),
     [
         (DistributionStatusLookupState.PUBLISHED, "COMPLETED"),
-        (DistributionStatusLookupState.NOT_FOUND, "RETRY_WAIT"),
+        (DistributionStatusLookupState.NOT_FOUND, "RECONCILING"),
         (DistributionStatusLookupState.UNKNOWN, "RECONCILIATION_REQUIRED"),
     ],
 )

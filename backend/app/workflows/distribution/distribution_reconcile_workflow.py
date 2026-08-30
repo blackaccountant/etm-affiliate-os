@@ -38,7 +38,7 @@ class DistributionReconcileWorkflow:
    if result.state is DistributionStatusLookupState.PUBLISHED:
     repository.transition_owned(run.id,context.authority,expected_statuses=("RECONCILING",),status="COMPLETED",values={"external_post_id":result.external_post_id,"external_url":result.external_url,"result_metadata":result.safe_metadata,"completed_at":datetime.now(timezone.utc),"failure_category":None,"error_summary":None})
    elif result.state is DistributionStatusLookupState.NOT_FOUND:
-    repository.transition_owned(run.id,context.authority,expected_statuses=("RECONCILING",),status="RETRY_WAIT",values={"failure_category":None,"error_summary":None})
+    data["safe_message"]="external publish was not found; follow-up publish will be activated"
    else:
     repository.transition_owned(run.id,context.authority,expected_statuses=("RECONCILING",),status="RECONCILIATION_REQUIRED",values={"failure_category":"AMBIGUOUS_SUBMIT_RESULT","error_summary":"external publish result remains unknown"});data["safe_message"]="external publish result remains unknown"
    return WorkflowResult(True,self.workflow_name,data,errors=[])

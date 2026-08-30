@@ -12,6 +12,9 @@ def distribution_mission_idempotency_key(run_id: object) -> str:
     return f"distribution:{run_id.strip()}"
 def distribution_reconciliation_mission_idempotency_key(run_id: object) -> str:
     return f"distribution-reconciliation:{distribution_mission_idempotency_key(run_id).removeprefix('distribution:')}"
+def distribution_followup_publish_mission_idempotency_key(run_id: object, generation: int) -> str:
+    if not isinstance(generation, int) or generation < 1: raise ValueError("follow-up publish generation must be at least 1")
+    return f"distribution-publish:{distribution_mission_idempotency_key(run_id).removeprefix('distribution:')}:{generation}"
 
 @dataclass(frozen=True)
 class DistributionWorkflowPayload:

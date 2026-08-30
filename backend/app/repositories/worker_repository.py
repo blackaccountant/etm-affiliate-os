@@ -72,7 +72,7 @@ class WorkerRepository:
     def list_online(self):
         return self.list_by_status(WorkerStatus.ONLINE)
 
-    def claim(self, worker_name: str, mission_id: str) -> bool:
+    def claim(self, worker_name: str, mission_id: str, commit: bool = True) -> bool:
         """Atomically claim an online, unassigned worker across processes."""
         now = self._utc_now()
         result = self.db.execute(
@@ -87,7 +87,10 @@ class WorkerRepository:
                 last_assigned_at=now,
             )
         )
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
         return result.rowcount == 1
 
     def release(

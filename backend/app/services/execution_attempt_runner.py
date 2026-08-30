@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import json
+from types import SimpleNamespace
 from time import perf_counter
 from datetime import datetime, timezone
 
@@ -14,6 +15,7 @@ from app.services.execution_runtime_context import (
     ExecutionRuntimeContext,
     activate_execution_runtime_context,
 )
+from app.task_queue.task import Task
 
 
 @dataclass
@@ -146,6 +148,7 @@ class ExecutionAttemptRunner:
                         authority, mission_id=mission_id, mission_name=mission_name,
                         worker_name=worker_name, duration=duration,
                         result_data=serialized, result_payload=payload,
+                        participant=participant,
                     )
                 elif retrying:
                     final = lifecycle.schedule_retry(
@@ -166,6 +169,18 @@ class ExecutionAttemptRunner:
                     )
             except ExecutionLeaseLostError:
                 return ExecutionAttemptResult(result, original_error, None, ownership_lost=True)
+            if final.successor is not None:
+                successor = final.successor
+                successor_task = Task(successor.spec.workflow, dict(successor.spec.payload))
+                successor_task.assign_worker(SimpleNamespace(name=successor.worker_name))
+                ExecutionAttemptRunner(
+                    self.session_factory, self.executor, workforce=self.workforce,
+                    lease_seconds=self.lease_seconds, heartbeat_seconds=self.heartbeat_seconds,
+                ).execute(
+                    execution_id=successor.execution_id, mission_id=successor.mission_id,
+                    mission_name=successor.mission_name, worker_name=successor.worker_name,
+                    task=successor_task, authority=successor.authority,
+                )
             return ExecutionAttemptResult(result, original_error, final.status)
         finally:
             if heartbeat is not None:

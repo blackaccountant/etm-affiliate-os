@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -34,6 +34,9 @@ class DistributionRun(Base):
     account_reference: Mapped[str] = mapped_column(String(255), nullable=False)
     destination: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED")
+    # Generation zero is the frozen initial operation; later cycles are explicit.
+    publish_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    reconciliation_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     prepared_content_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
