@@ -68,3 +68,28 @@ def evidence_fingerprint(*, observation_id: object, source_reference: object,
         canonical_json(normalized_representation),
         "" if content_fingerprint is None else required_text(content_fingerprint, "content_fingerprint"),
     )
+
+
+def normalize_topic(topic: object, topic_label: object) -> tuple[str, str]:
+    label = required_text(topic_label, "topic_label")
+    if len(label) > 256:
+        raise ValueError("topic_label is too long")
+    raw = required_text(topic, "topic", lowercase=True)
+    slug = "-".join(part for part in raw.replace("_", " ").split() if part)
+    if not slug or len(slug) > 128 or any(not (char.isalnum() or char == "-") for char in slug):
+        raise ValueError("topic must normalize to a stable slug")
+    return slug, label
+
+
+def evidence_set_fingerprint(entries: list[tuple[str, str]]) -> str:
+    if not entries:
+        raise ValueError("evidence_ids are required")
+    canonical = sorted(f"{required_text(item_id, 'evidence_id')}:{required_text(fingerprint, 'evidence_fingerprint')}" for item_id, fingerprint in entries)
+    return _fingerprint("audience-evidence-set-v1", *canonical)
+
+
+def signal_extraction_key(*, subject_id: str | None, signal_type: str, topic_slug: str,
+                          intent_stage: str | None, evidence_set: str, ruleset_version: str) -> str:
+    scope = f"subject:{subject_id}" if subject_id is not None else "subjectless"
+    return _fingerprint("audience-signal-extraction-v1", scope, signal_type, topic_slug,
+                        intent_stage or "", evidence_set, ruleset_version)

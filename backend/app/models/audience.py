@@ -127,3 +127,53 @@ class AudienceEvidence(Base):
     metadata_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
 
     observation = relationship("AudienceObservation", back_populates="evidence")
+
+
+class AudienceSignal(Base):
+    __tablename__ = "audience_signals"
+    __table_args__ = (
+        UniqueConstraint("extraction_key", name="uq_audience_signals_extraction_key"),
+        CheckConstraint("signal_type IN ('PROBLEM', 'INTEREST', 'INTENT', 'PURCHASE', 'ENGAGEMENT', 'BUSINESS_NEED')", name="ck_audience_signals_type"),
+        CheckConstraint("intent_stage IS NULL OR (signal_type = 'INTENT' AND intent_stage IN ('RESEARCH', 'COMPARE', 'EVALUATE', 'PRICING', 'PURCHASE_REQUEST'))", name="ck_audience_signals_intent_stage"),
+        CheckConstraint("strength >= 0 AND strength <= 100", name="ck_audience_signals_strength"),
+        CheckConstraint("confidence >= 0 AND confidence <= 100", name="ck_audience_signals_confidence"),
+        CheckConstraint("length(trim(topic_slug)) > 0", name="ck_audience_signals_topic_slug"),
+        CheckConstraint("length(trim(topic_label)) > 0", name="ck_audience_signals_topic_label"),
+        CheckConstraint("length(trim(ruleset_version)) > 0", name="ck_audience_signals_ruleset"),
+        CheckConstraint("supersedes_signal_id IS NULL OR supersedes_signal_id <> id", name="ck_audience_signals_no_self_supersede"),
+        Index("ix_audience_signals_subject_id", "subject_id"), Index("ix_audience_signals_type", "signal_type"),
+        Index("ix_audience_signals_topic_slug", "topic_slug"), Index("ix_audience_signals_observed_at", "observed_at"),
+        Index("ix_audience_signals_derived_at", "derived_at"), Index("ix_audience_signals_ruleset_version", "ruleset_version"),
+        Index("ix_audience_signals_supersedes_signal_id", "supersedes_signal_id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    subject_id: Mapped[str | None] = mapped_column(ForeignKey("audience_subjects.id"), nullable=True)
+    signal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    topic_slug: Mapped[str] = mapped_column(String(128), nullable=False)
+    topic_label: Mapped[str] = mapped_column(String(256), nullable=False)
+    intent_stage: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    strength: Mapped[int] = mapped_column(nullable=False)
+    confidence: Mapped[int] = mapped_column(nullable=False)
+    evidence_set_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    extraction_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    ruleset_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    derived_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
+    expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    supersedes_signal_id: Mapped[str | None] = mapped_column(ForeignKey("audience_signals.id"), nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[object | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
+    subject = relationship("AudienceSubject")
+    supersedes_signal = relationship("AudienceSignal", remote_side="AudienceSignal.id")
+    evidence_links = relationship("AudienceSignalEvidence", back_populates="signal")
+
+
+class AudienceSignalEvidence(Base):
+    __tablename__ = "audience_signal_evidence"
+    __table_args__ = (UniqueConstraint("signal_id", "evidence_id", name="uq_audience_signal_evidence_pair"), Index("ix_audience_signal_evidence_evidence_id", "evidence_id"))
+    signal_id: Mapped[str] = mapped_column(ForeignKey("audience_signals.id"), primary_key=True)
+    evidence_id: Mapped[str] = mapped_column(ForeignKey("audience_evidence.id"), primary_key=True)
+    signal = relationship("AudienceSignal", back_populates="evidence_links")
+    evidence = relationship("AudienceEvidence")

@@ -35,4 +35,6 @@ from app.models.audience import (
     AudienceObservation,
     AudienceResearchRun,
     AudienceSubject,
+    AudienceSignal,
+    AudienceSignalEvidence,
 )
