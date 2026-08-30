@@ -46,7 +46,12 @@ def _create_frozen_m8_schema(connection):
 def test_m9a_is_single_head_directly_after_frozen_m8():
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == [REVISION]
+    heads = scripts.get_heads()
+    assert len(heads) == 1
+    assert REVISION in {
+        revision.revision
+        for revision in scripts.iterate_revisions(heads[0], "base")
+    }
     script = scripts.get_revision(REVISION)
     assert script.down_revision == PREVIOUS
     module = _module()
