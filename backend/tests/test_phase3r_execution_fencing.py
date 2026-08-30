@@ -14,6 +14,7 @@ from app.models.execution import Execution
 from app.models.mission_record import MissionRecord
 from app.models.worker import Worker
 from app.repositories.execution_repository import ExecutionRepository
+from app.repositories.execution_repository import ExecutionLeaseLostError
 from app.repositories.mission_repository import MissionRepository
 from app.repositories.worker_repository import WorkerRepository
 from app.retry.retry_lifecycle_coordinator import RetryLifecycleCoordinator
@@ -80,6 +81,7 @@ def test_initial_runtime_acquires_lease_before_workflow_and_finalizes_atomically
     assert launched["result"].success is True
     assert observed["owner"] and observed["generation"] == 1 and observed["expires"] is not None
     assert (execution.status, mission.status, worker.status) == ("COMPLETED", "COMPLETED", "ONLINE")
+    assert execution.lease_owner is None and execution.lease_expires_at is None
     assert worker.current_mission_id is None and workforce.get_worker("Lease Worker").status is WorkerStatus.ONLINE
 
 
@@ -171,6 +173,35 @@ def test_owned_failure_transition_is_coherent(db_session_factory):
         db.close()
     durable_mission, execution, worker = state(db_session_factory)
     assert (execution.status, durable_mission.status, worker.status) == ("FAILED", "FAILED", "ONLINE")
+    assert execution.lease_owner is None and execution.lease_expires_at is None and execution.next_retry_at is None
+    assert execution.lease_generation == authority.lease_generation
+    db = db_session_factory()
+    try:
+        with pytest.raises(ExecutionLeaseLostError):
+            ExecutionRepository(db).verify_active_authority(authority)
+    finally:
+        db.close()
+
+
+def test_owned_completion_clears_lease_and_fences_original_authority(db_session_factory):
+    mission_id, _, authority = seed_active(db_session_factory)
+    db = db_session_factory()
+    try:
+        before = db.get(Execution, authority.execution_id)
+        assert before.lease_owner == authority.lease_owner and before.lease_expires_at is not None
+        generation = before.lease_generation
+        completed = ExecutionRepository(db).complete_owned(authority, result_data='{"success": true}')
+        assert completed.status == "COMPLETED"
+        assert completed.lease_owner is None and completed.lease_expires_at is None
+        assert completed.lease_generation == generation
+    finally:
+        db.close()
+    db = db_session_factory()
+    try:
+        with pytest.raises(ExecutionLeaseLostError):
+            ExecutionRepository(db).verify_active_authority(authority)
+    finally:
+        db.close()
 
 
 def test_owned_retry_transition_is_coherent(db_session_factory):

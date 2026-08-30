@@ -208,6 +208,7 @@ class ExecutionRepository:
             Execution.next_retry_at: None,
             Execution.failure_type: None,
             Execution.error: None,
+            Execution.lease_owner: None,
             Execution.lease_expires_at: None,
         }, commit=commit)
 
@@ -220,6 +221,7 @@ class ExecutionRepository:
             Execution.error: error,
             Execution.failure_type: failure_type,
             Execution.next_retry_at: None,
+            Execution.lease_owner: None,
             Execution.lease_expires_at: None,
         }
         if retry_count is not None:
