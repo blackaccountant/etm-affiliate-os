@@ -42,4 +42,7 @@ from app.models.audience import (
     AudienceSegment,
     AudienceSegmentRevision,
     AudienceSegmentMembership,
+    AudienceQualificationAssessment,
+    AudienceQualificationAssessmentMembership,
+    AudienceQualificationContribution,
 )

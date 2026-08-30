@@ -257,3 +257,77 @@ class AudienceSegmentMembership(Base):
     evaluated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     segment_revision = relationship("AudienceSegmentRevision")
     profile = relationship("AudienceProfile")
+
+
+class AudienceQualificationAssessment(Base):
+    __tablename__ = "audience_qualification_assessments"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "scoring_ruleset_version", "scoring_ruleset_fingerprint", "context_fingerprint", "selected_membership_fingerprint", name="uq_audience_qualification_assessments_identity"),
+        CheckConstraint("scoring_ruleset_fingerprint <> '' AND length(scoring_ruleset_fingerprint) = 64", name="ck_audience_qualification_assessments_ruleset_fingerprint"),
+        CheckConstraint("context_fingerprint <> '' AND length(context_fingerprint) = 64", name="ck_audience_qualification_assessments_context_fingerprint"),
+        CheckConstraint("selected_membership_fingerprint <> '' AND length(selected_membership_fingerprint) = 64", name="ck_audience_qualification_assessments_membership_fingerprint"),
+        CheckConstraint("context_type IN ('NONE', 'PRODUCT', 'OFFER', 'TOPIC')", name="ck_audience_qualification_assessments_context_type"),
+        CheckConstraint("qualification_status IN ('NOT_QUALIFIED', 'EARLY', 'QUALIFIED', 'HIGH_INTENT')", name="ck_audience_qualification_assessments_status"),
+        *(CheckConstraint(f"{field} >= 0 AND {field} <= 100", name=f"ck_audience_qualification_assessments_{field}") for field in (
+            "problem_strength", "interest_alignment", "research_intent", "comparison_intent", "evaluation_intent",
+            "pricing_intent", "purchase_request_intent", "purchase_signal", "engagement", "business_need_fit",
+            "intent_score", "qualification_score",
+        )),
+        Index("ix_audience_qualification_assessments_profile", "profile_id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    profile_id: Mapped[str] = mapped_column(ForeignKey("audience_profiles.id"), nullable=False)
+    scoring_ruleset_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    scoring_ruleset_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    scoring_ruleset_json: Mapped[object] = mapped_column(JSON, nullable=False)
+    context_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    context_json: Mapped[object] = mapped_column(JSON, nullable=False)
+    context_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    selected_membership_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    problem_strength: Mapped[int] = mapped_column(nullable=False)
+    interest_alignment: Mapped[int] = mapped_column(nullable=False)
+    research_intent: Mapped[int] = mapped_column(nullable=False)
+    comparison_intent: Mapped[int] = mapped_column(nullable=False)
+    evaluation_intent: Mapped[int] = mapped_column(nullable=False)
+    pricing_intent: Mapped[int] = mapped_column(nullable=False)
+    purchase_request_intent: Mapped[int] = mapped_column(nullable=False)
+    purchase_signal: Mapped[int] = mapped_column(nullable=False)
+    engagement: Mapped[int] = mapped_column(nullable=False)
+    business_need_fit: Mapped[int] = mapped_column(nullable=False)
+    intent_score: Mapped[int] = mapped_column(nullable=False)
+    qualification_score: Mapped[int] = mapped_column(nullable=False)
+    qualification_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    derived_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    profile = relationship("AudienceProfile")
+
+
+class AudienceQualificationAssessmentMembership(Base):
+    __tablename__ = "audience_qualification_assessment_memberships"
+    assessment_id: Mapped[str] = mapped_column(ForeignKey("audience_qualification_assessments.id"), primary_key=True)
+    membership_id: Mapped[str] = mapped_column(ForeignKey("audience_segment_memberships.id"), primary_key=True)
+    assessment = relationship("AudienceQualificationAssessment")
+    membership = relationship("AudienceSegmentMembership")
+
+
+class AudienceQualificationContribution(Base):
+    __tablename__ = "audience_qualification_contributions"
+    __table_args__ = (
+        UniqueConstraint("assessment_id", "source_signal_id", "dimension", "rule_id", name="uq_audience_qualification_contributions_identity"),
+        CheckConstraint("dimension IN ('problem_strength', 'interest_alignment', 'research_intent', 'comparison_intent', 'evaluation_intent', 'pricing_intent', 'purchase_request_intent', 'purchase_signal', 'engagement', 'business_need_fit')", name="ck_aqc_dimension"),
+        CheckConstraint("disposition IN ('SELECTED', 'DUPLICATE_SUPPRESSED', 'CAPPED')", name="ck_aqc_disposition"),
+        *(CheckConstraint(f"{field} >= 0 AND {field} <= 100", name=f"ck_aqc_{field}") for field in ("strength", "confidence", "raw_amount", "confidence_adjusted_amount", "final_amount")),
+        Index("ix_audience_qualification_contributions_signal", "source_signal_id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assessment_id: Mapped[str] = mapped_column(ForeignKey("audience_qualification_assessments.id"), nullable=False)
+    source_signal_id: Mapped[str] = mapped_column(ForeignKey("audience_signals.id"), nullable=False)
+    dimension: Mapped[str] = mapped_column(String(32), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    strength: Mapped[int] = mapped_column(nullable=False)
+    confidence: Mapped[int] = mapped_column(nullable=False)
+    raw_amount: Mapped[int] = mapped_column(nullable=False)
+    confidence_adjusted_amount: Mapped[int] = mapped_column(nullable=False)
+    final_amount: Mapped[int] = mapped_column(nullable=False)
+    disposition: Mapped[str] = mapped_column(String(32), nullable=False)
+    assessment = relationship("AudienceQualificationAssessment")
+    source_signal = relationship("AudienceSignal")
