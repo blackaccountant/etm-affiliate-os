@@ -55,3 +55,4 @@ from app.models.crm import (
     SuppressionEvent,
 )
 from app.models.crm_relationships import LeadLifecycleEvent, LeadQualificationLink
+from app.models.outreach import OutreachIntent, OutreachMessage
