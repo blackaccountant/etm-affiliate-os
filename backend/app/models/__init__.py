@@ -46,3 +46,11 @@ from app.models.audience import (
     AudienceQualificationAssessmentMembership,
     AudienceQualificationContribution,
 )
+from app.models.crm import (
+    Lead,
+    ContactPoint,
+    ContactPointProvenance,
+    ContactPointStateEvent,
+    PermissionEvent,
+    SuppressionEvent,
+)
