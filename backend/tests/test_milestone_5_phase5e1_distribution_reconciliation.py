@@ -156,6 +156,9 @@ def test_normal_attempt_cannot_resume_existing_reconciling_run(db_session, db_se
 
 def test_reconciliation_mission_payload_stays_business_only(db_session, db_session_factory):
     run = distribution_run(db_session)
+    WorkerRepository(db_session).create(
+        "Reconciliation Worker", "Test", ["content_distribution"], WorkerStatus.ONLINE,
+    )
     manager = __import__("app.mission.manager", fromlist=["MissionManager"]).MissionManager(
         workforce=WorkforceManager(load_defaults=False), session_factory=db_session_factory,
     )

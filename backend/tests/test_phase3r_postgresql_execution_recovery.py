@@ -113,9 +113,22 @@ def test_recovered_replacement_dispatches_exactly_once(factory):
         assert calls == [("pg_recovery", auth.execution_id)]
     finally: db.close()
 
-def test_heartbeat_protected_execution_cannot_be_recovered(factory):
+def test_heartbeat_protected_execution_cannot_be_recovered(factory, monkeypatch):
     mission_id, auth = seed(factory)
-    started, release, outcome = threading.Event(), threading.Event(), []
+    started, release, renewed, outcome = threading.Event(), threading.Event(), threading.Event(), []
+    heartbeat = {"attempts": 0, "error": None}
+    real_renew = ExecutionRepository.renew_lease
+    def observed_renew(repository, authority, lease_seconds):
+        heartbeat["attempts"] += 1
+        try:
+            result = real_renew(repository, authority, lease_seconds)
+        except Exception as exc:
+            heartbeat["error"] = exc
+            raise
+        if result:
+            renewed.set()
+        return result
+    monkeypatch.setattr(ExecutionRepository, "renew_lease", observed_renew)
     class BlockingEngine:
         def __init__(self): self.calls = 0
         def run(self, workflow_name, payload):
@@ -124,16 +137,19 @@ def test_heartbeat_protected_execution_cannot_be_recovered(factory):
     task = Task("pg_recovery", {}); task.assign_worker(type("WorkerInfo", (), {"name":"Recovery Worker"})())
     runner = ExecutionAttemptRunner(factory, executor, lease_seconds=120, heartbeat_seconds=.05)
     thread = threading.Thread(target=lambda: outcome.append(runner.execute(execution_id=auth.execution_id, mission_id=mission_id, mission_name="PG recovery", worker_name="Recovery Worker", task=task, authority=auth)))
-    thread.start(); assert started.wait(5)
     probe=factory(); first=probe.get(Execution,auth.execution_id); expiry_1=first.lease_expires_at; assert first.lease_owner and first.lease_generation == 1 and expiry_1 > datetime.now(timezone.utc); probe.close()
-    sleep(.12)
-    probe=factory(); current=probe.get(Execution,auth.execution_id); expiry_2=current.lease_expires_at; mission=probe.get(MissionRecord,mission_id); worker=probe.get(Worker,"Recovery Worker")
     try:
+        thread.start(); assert started.wait(5)
+        assert renewed.wait(5), f"heartbeat attempts={heartbeat['attempts']} error={heartbeat['error']}"
+        assert heartbeat["error"] is None
+        probe=factory(); current=probe.get(Execution,auth.execution_id); expiry_2=current.lease_expires_at; mission=probe.get(MissionRecord,mission_id); worker=probe.get(Worker,"Recovery Worker")
         assert expiry_2 > expiry_1 and mission.status == "RUNNING" and worker.status == "BUSY"
         assert RunningExecutionRecoveryService(factory, lease_seconds=1).recover(auth.execution_id) is None
         assert probe.query(Execution).filter_by(mission_id=mission_id).count() == 1
-    finally: probe.close()
-    release.set(); thread.join(10); assert not thread.is_alive() and engine.calls == 1
+        probe.close()
+    finally:
+        release.set(); thread.join(10)
+    assert not thread.is_alive() and engine.calls == 1
     probe=factory()
     try:
         assert probe.get(Execution,auth.execution_id).status == "COMPLETED"

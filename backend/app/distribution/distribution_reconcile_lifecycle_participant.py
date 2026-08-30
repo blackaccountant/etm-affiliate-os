@@ -12,7 +12,7 @@ from app.distribution.mission_contracts import (
 from app.models.distribution_run import DistributionRun
 from app.models.execution import Execution
 from app.repositories.execution_repository import ExecutionLeaseLostError
-from app.services.owned_execution_lifecycle import SuccessorOperationSpec
+from app.services.durable_operation_activation_service import SuccessorOperationSpec
 
 
 class DistributionReconcileLifecycleParticipant:

@@ -10,8 +10,12 @@ CONTENT_DISTRIBUTION_RECONCILIATION_WORKFLOW = "distribution_reconcile"
 def distribution_mission_idempotency_key(run_id: object) -> str:
     if not isinstance(run_id, str) or not run_id.strip(): raise ValueError("distribution_run_id is required")
     return f"distribution:{run_id.strip()}"
-def distribution_reconciliation_mission_idempotency_key(run_id: object) -> str:
-    return f"distribution-reconciliation:{distribution_mission_idempotency_key(run_id).removeprefix('distribution:')}"
+def distribution_reconciliation_mission_idempotency_key(run_id: object, generation: int = 0) -> str:
+    """Return the durable identity for one reconciliation generation."""
+    if not isinstance(generation, int) or generation < 0:
+        raise ValueError("reconciliation generation must be non-negative")
+    key = f"distribution-reconciliation:{distribution_mission_idempotency_key(run_id).removeprefix('distribution:')}"
+    return key if generation == 0 else f"{key}:{generation}"
 def distribution_followup_publish_mission_idempotency_key(run_id: object, generation: int) -> str:
     if not isinstance(generation, int) or generation < 1: raise ValueError("follow-up publish generation must be at least 1")
     return f"distribution-publish:{distribution_mission_idempotency_key(run_id).removeprefix('distribution:')}:{generation}"
