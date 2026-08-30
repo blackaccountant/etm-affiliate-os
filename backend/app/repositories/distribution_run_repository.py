@@ -25,6 +25,21 @@ class DistributionRunRepository:
     def list_by_artifact(self, artifact_id: str) -> list[DistributionRun]:
         return self.db.query(DistributionRun).filter_by(generated_content_artifact_id=artifact_id).order_by(DistributionRun.created_at.asc()).all()
 
+    def lock_due_scheduled(self, batch_size: int) -> list[DistributionRun]:
+        """Lock a bounded, deterministic batch using database-authoritative time."""
+        if not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be positive")
+        return (
+            self.db.query(DistributionRun)
+            .filter(DistributionRun.status == "SCHEDULED")
+            .filter(DistributionRun.scheduled_for.isnot(None))
+            .filter(DistributionRun.scheduled_for <= func.now())
+            .order_by(DistributionRun.scheduled_for.asc(), DistributionRun.id.asc())
+            .with_for_update(skip_locked=True)
+            .limit(batch_size)
+            .all()
+        )
+
     @staticmethod
     def _now():
         from datetime import datetime, timezone
