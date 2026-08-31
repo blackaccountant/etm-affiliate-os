@@ -59,3 +59,7 @@ from app.models.outreach import OutreachIntent, OutreachMessage
 from app.models.outreach_delivery import OutreachDeliveryAttempt, OutreachDeliveryEvent
 from app.models.outreach_provider_dispatch import OutreachProviderDispatch, OutreachProviderReference
 from app.models.cold_prospecting import ColdProspectingAuthorization, ColdProspectingOrganizationEvidence, ColdProspectingPolicySelection
+from app.models.cold_delivery import (
+    ColdDeliveryOperation, ColdMessageContent, ColdDeliveryOperationState, ColdDeliveryEvent,
+    ColdT3Decision, ColdProviderDispatch, ColdProviderDispatchReference, ColdProviderFeedbackReceipt,
+)
