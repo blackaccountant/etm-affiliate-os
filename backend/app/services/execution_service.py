@@ -130,5 +130,8 @@ class ExecutionService:
     def claim_due_retry(self, execution_id: int):
         return self.repository.claim_due_retry(execution_id)
 
-    def restore_due_retry_claim(self, execution_id: int, error: str) -> bool:
-        return self.repository.restore_due_retry_claim(execution_id, error)
+    def restore_due_retry_claim(self, execution_id: int, authority, error: str) -> bool:
+        return self.repository.restore_due_retry_claim(execution_id, authority, error)
+
+    def verify_active_authority(self, authority):
+        return self.repository.verify_active_authority(authority)

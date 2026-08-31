@@ -141,6 +141,15 @@ def test_claim_due_retry_changes_status(
     repository = ExecutionRepository(
         db_session
     )
+    missions = MissionRepository(db_session)
+    workers = WorkerRepository(db_session)
+    mission = missions.create(
+        "claim-due-retry-positive", "Claim due retry", "test", "affiliate_discovery",
+        current_worker_name="Retry Worker",
+    )
+    missions.update_status(mission.id, "RETRY_WAIT", current_worker_name="Retry Worker")
+    workers.create("Retry Worker", "Test", status=WorkerStatus.ONLINE)
+    assert workers.claim("Retry Worker", mission.id)
 
 
     execution = Execution(
@@ -152,6 +161,12 @@ def test_claim_due_retry_changes_status(
         retry_count=1,
 
         max_retries=3,
+
+        mission_id=mission.id,
+
+        worker_name="Retry Worker",
+
+        next_retry_at=datetime.now(timezone.utc) - timedelta(seconds=1),
 
     )
 
@@ -174,4 +189,9 @@ def test_claim_due_retry_changes_status(
         claimed.status
         == "RETRYING"
     )
-    assert claimed.lease_owner and claimed.lease_generation == 1 and claimed.lease_expires_at > datetime.now(timezone.utc)
+    expiry = claimed.lease_expires_at.replace(tzinfo=timezone.utc)
+    assert claimed.lease_owner and claimed.lease_generation == 1 and expiry > datetime.now(timezone.utc)
+    db_session.expire_all()
+    assert db_session.get(type(mission), mission.id).status == "RUNNING"
+    worker = db_session.get(type(workers.get_by_name("Retry Worker")), "Retry Worker")
+    assert worker.status == "BUSY" and worker.current_mission_id == mission.id

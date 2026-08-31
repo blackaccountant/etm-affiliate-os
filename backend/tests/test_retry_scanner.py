@@ -35,8 +35,13 @@ class FakeExecutionService:
 
     def claim_due_retry(
         self,
-        execution,
+        execution_id,
     ):
+
+        execution = next(
+            item for item in self.get_retry_queue()
+            if item.id == execution_id
+        )
 
         execution.status = "RETRYING"
 

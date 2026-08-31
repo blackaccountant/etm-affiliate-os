@@ -356,18 +356,10 @@ class RetryScanner:
 
                 try:
 
+                    authority = getattr(execution, "retry_authority", None)
                     restore_claim = getattr(self.execution_service, "restore_due_retry_claim", None)
-                    if restore_claim is not None:
-                        restore_claim(execution.id, error)
-                    else:
-                        self.execution_service.schedule_retry(
-                            execution=execution,
-                            retry_count=retry_count,
-                            max_retries=max_retries,
-                            next_retry_at=datetime.now(timezone.utc),
-                            failure_type=failure_type,
-                            error=error,
-                        )
+                    if authority is not None and restore_claim is not None:
+                        restore_claim(execution.id, authority, error)
 
                 except Exception:
 

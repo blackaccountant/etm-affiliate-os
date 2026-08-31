@@ -154,8 +154,9 @@ class ExecutionRepository:
         return updated == 1
 
     def renew_lease(self, authority: ExecutionLeaseAuthority, lease_seconds: int) -> bool:
+        now = self._utc_now()
         expiry = self._utc_now() + timedelta(seconds=lease_seconds)
-        updated = self.db.query(Execution).filter(Execution.id == authority.execution_id, Execution.status.in_(("RUNNING", "RETRYING")), Execution.lease_owner == authority.lease_owner, Execution.lease_generation == authority.lease_generation).update({Execution.lease_expires_at: expiry}, synchronize_session=False)
+        updated = self.db.query(Execution).filter(Execution.id == authority.execution_id, Execution.status.in_(("RUNNING", "RETRYING")), Execution.lease_owner == authority.lease_owner, Execution.lease_generation == authority.lease_generation, Execution.lease_expires_at.is_not(None), Execution.lease_expires_at > now).update({Execution.lease_expires_at: expiry}, synchronize_session=False)
         self.db.commit()
         return updated == 1
 
@@ -184,11 +185,14 @@ class ExecutionRepository:
         ``commit=False`` is the lifecycle-coordinator path: the Execution,
         Mission, and Worker updates then share one transaction.
         """
+        now = self._utc_now()
         updated = self.db.query(Execution).filter(
             Execution.id == authority.execution_id,
             Execution.status.in_(("RUNNING", "RETRYING")),
             Execution.lease_owner == authority.lease_owner,
             Execution.lease_generation == authority.lease_generation,
+            Execution.lease_expires_at.is_not(None),
+            Execution.lease_expires_at > now,
         ).update(values, synchronize_session=False)
         if updated != 1:
             raise ExecutionLeaseLostError("execution lease ownership was lost")
@@ -436,17 +440,57 @@ class ExecutionRepository:
         claimed.retry_authority = authority
         return claimed
 
-    def restore_due_retry_claim(self, execution_id: int, error: str) -> bool:
-        """Return an undispatched leased claim to its durable retry state."""
-        execution = self.db.query(Execution).filter(Execution.id == execution_id).with_for_update().one_or_none()
-        if execution is None or execution.status != "RETRYING":
-            self.db.rollback()
-            return False
-        mission = self.db.query(MissionRecord).filter(MissionRecord.id == execution.mission_id).with_for_update().one_or_none()
-        if mission is None or mission.status != "RUNNING" or mission.current_worker_name != execution.worker_name:
+    def restore_due_retry_claim(self, execution_id: int, authority: ExecutionLeaseAuthority,
+                                error: str) -> bool:
+        """Return an undispatched claim owned by ``authority`` to retry wait.
+
+        The Execution, Mission, and Worker are locked in that order and are
+        committed as one durable transition.  A caller that cannot present the
+        exact unexpired authority issued by ``claim_due_retry`` cannot alter a
+        claimed retry.
+        """
+        if authority is None or execution_id != authority.execution_id:
             self.db.rollback()
             return False
         now = self._utc_now()
+        execution = (
+            self.db.query(Execution)
+            .filter(Execution.id == execution_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if (
+            execution is None
+            or execution.status != "RETRYING"
+            or execution.lease_owner != authority.lease_owner
+            or execution.lease_generation != authority.lease_generation
+            or execution.lease_expires_at is None
+            or self._normalize_utc(execution.lease_expires_at) <= now
+        ):
+            self.db.rollback()
+            return False
+        mission = (
+            self.db.query(MissionRecord)
+            .filter(MissionRecord.id == execution.mission_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        worker = (
+            self.db.query(Worker)
+            .filter(Worker.name == execution.worker_name)
+            .with_for_update()
+            .one_or_none()
+        )
+        if (
+            mission is None
+            or mission.status != "RUNNING"
+            or mission.current_worker_name != execution.worker_name
+            or worker is None
+            or worker.status != "BUSY"
+            or worker.current_mission_id != mission.id
+        ):
+            self.db.rollback()
+            return False
         execution.status = "QUEUED"
         execution.next_retry_at = now
         execution.error = error
