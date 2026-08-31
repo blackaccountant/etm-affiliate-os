@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,10 @@ class Settings(BaseSettings):
     OLLAMA_CONTENT_TIMEOUT_SECONDS: float = 30.0
     EXECUTION_LEASE_SECONDS: int = 90
     EXECUTION_HEARTBEAT_SECONDS: int = 30
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = ""
+    RESEND_FROM_NAME: str = ""
+    RESEND_REQUEST_TIMEOUT_SECONDS: float = Field(default=10.0, ge=0.1, le=30.0)
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,

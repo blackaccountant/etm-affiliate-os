@@ -22,6 +22,7 @@ from app.workflows.content.content_repurposing_workflow import ContentRepurposin
 from app.workflows.distribution.distribution_publish_workflow import DistributionPublishWorkflow
 from app.workflows.distribution.distribution_reconcile_workflow import DistributionReconcileWorkflow
 from app.workflows.audience.audience_signal_extraction_workflow import AudienceSignalExtractionWorkflow
+from app.workflows.outreach_delivery_workflow import OutreachDeliveryWorkflow
 
 
 
@@ -63,6 +64,7 @@ def create_workflow_registry():
     registry.register("distribution_publish", DistributionPublishWorkflow())
     registry.register("distribution_reconcile", DistributionReconcileWorkflow())
     registry.register("audience_signal_extract", AudienceSignalExtractionWorkflow())
+    registry.register("outreach_delivery", OutreachDeliveryWorkflow())
 
 
 

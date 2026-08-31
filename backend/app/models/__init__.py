@@ -57,3 +57,4 @@ from app.models.crm import (
 from app.models.crm_relationships import LeadLifecycleEvent, LeadQualificationLink
 from app.models.outreach import OutreachIntent, OutreachMessage
 from app.models.outreach_delivery import OutreachDeliveryAttempt, OutreachDeliveryEvent
+from app.models.outreach_provider_dispatch import OutreachProviderDispatch, OutreachProviderReference

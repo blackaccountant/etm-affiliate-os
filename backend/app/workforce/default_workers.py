@@ -54,6 +54,7 @@ def create_default_workers():
             capabilities=[
                 "content_generation",
                 "content_distribution",
+                "outreach_delivery",
                 "seo_content",
                 "product_reviews",
             ],
