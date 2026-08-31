@@ -8,6 +8,7 @@ from app.outreach.contracts import sha256_fingerprint
 from app.outreach.cold_delivery_runtime_contracts import COLD_B2B_DELIVERY_WORKFLOW, ColdDeliveryWorkflowPayload
 from app.repositories.execution_repository import ExecutionRepository
 from app.services.execution_runtime_context import current_execution_runtime_context
+from app.services.cold_delivery_t3_service import ColdDeliveryT3Service
 from app.workflow_engine.workflow_result import WorkflowResult
 
 class ColdDeliveryWorkflow:
@@ -56,6 +57,9 @@ class ColdDeliveryWorkflow:
                     safe_payload={"state": "READY"}))
                 db.flush()
                 db.commit()
+            elif state.current_state == "READY":
+                result = ColdDeliveryT3Service(db).evaluate_and_plan(values.cold_delivery_operation_id, authority)
+                return WorkflowResult(True, self.workflow_name, result, errors=[])
             return WorkflowResult(True, self.workflow_name, values.to_dict(), errors=[])
         except Exception:
             db.rollback(); raise

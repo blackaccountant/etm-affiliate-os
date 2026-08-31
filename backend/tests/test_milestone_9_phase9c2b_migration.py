@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy import create_engine, inspect
 
 
-REVISION, PREVIOUS = "d3e4f5a6b7c8", "c2d3e4f5a6b7"
+REVISION, PREVIOUS, CURRENT_HEAD = "d3e4f5a6b7c8", "c2d3e4f5a6b7", "e0f1a2b3c4d5"
 TABLES = {"cold_delivery_operations", "cold_message_contents", "cold_delivery_operation_state", "cold_delivery_events", "cold_t3_decisions", "cold_provider_dispatches", "cold_provider_dispatch_references", "cold_provider_feedback_receipts"}
 
 
@@ -22,7 +22,7 @@ def module():
 
 def test_revision_is_single_head_and_exact_successor():
     scripts = ScriptDirectory.from_config(Config(str(Path(__file__).parents[1] / "alembic.ini")))
-    assert scripts.get_heads() == [REVISION] and scripts.get_revision(REVISION).down_revision == PREVIOUS
+    assert scripts.get_heads() == [CURRENT_HEAD] and scripts.get_revision(REVISION).down_revision == PREVIOUS and scripts.get_revision(CURRENT_HEAD).down_revision == REVISION
 
 
 def test_additive_roundtrip_constraints_and_no_routing_pii():

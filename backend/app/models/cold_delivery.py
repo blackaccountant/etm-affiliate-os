@@ -23,6 +23,7 @@ class ColdDeliveryOperation(Base):
     __table_args__ = (
         ForeignKeyConstraint(["cold_authorization_id", "lead_id", "contact_point_id"], ["cold_prospecting_authorizations.id", "cold_prospecting_authorizations.lead_id", "cold_prospecting_authorizations.contact_point_id"], name="fk_cold_delivery_operations_authorization_owner"),
         UniqueConstraint("cold_authorization_id", name="uq_cold_delivery_operations_authorization"),
+        UniqueConstraint("id", "cold_authorization_id", name="uq_cold_delivery_operations_id_authorization"),
         UniqueConstraint("source_namespace", "source_event_key", name="uq_cold_delivery_operations_source"),
         UniqueConstraint("id", "message_content_fingerprint", name="uq_cold_delivery_operations_message"),
         CheckConstraint("action IN ('INITIAL','FOLLOW_UP')", name="ck_cold_delivery_operations_action"),
@@ -110,11 +111,12 @@ class ColdT3Decision(Base):
     __tablename__ = "cold_t3_decisions"
     __table_args__ = (
         UniqueConstraint("source_namespace", "source_event_key", name="uq_cold_t3_decisions_source"),
+        ForeignKeyConstraint(["operation_id", "cold_authorization_id"], ["cold_delivery_operations.id", "cold_delivery_operations.cold_authorization_id"], name="fk_cold_t3_decisions_operation_authorization"),
         CheckConstraint("decision IN ('ALLOWED','BLOCKED')", name="ck_cold_t3_decisions_value"),
         CheckConstraint("length(authorization_fingerprint) = 64", name="ck_cold_t3_decisions_authorization_fingerprint"),
         CheckConstraint("length(policy_fingerprint) = 64", name="ck_cold_t3_decisions_policy_fingerprint"),
         CheckConstraint("length(authority_fingerprint) = 64", name="ck_cold_t3_decisions_authority_fingerprint"),
-        CheckConstraint("length(recipient_fingerprint) = 64", name="ck_cold_t3_decisions_recipient_fingerprint"),
+        CheckConstraint("(decision = 'BLOCKED' AND (recipient_fingerprint IS NULL OR length(recipient_fingerprint) = 64)) OR (decision = 'ALLOWED' AND recipient_fingerprint IS NOT NULL AND length(recipient_fingerprint) = 64)", name="ck_cold_t3_decisions_recipient_fingerprint"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     operation_id: Mapped[str] = mapped_column(ForeignKey("cold_delivery_operations.id"), nullable=False)
@@ -124,7 +126,7 @@ class ColdT3Decision(Base):
     policy_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     authority_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     crm_evidence_ids: Mapped[object] = mapped_column(JSON, nullable=False)
-    recipient_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    recipient_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     decision: Mapped[str] = mapped_column(String(16), nullable=False)
     reason_codes: Mapped[object] = mapped_column(JSON, nullable=False)
     decision_schema_version: Mapped[str] = mapped_column(String(128), nullable=False)

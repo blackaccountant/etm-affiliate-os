@@ -98,8 +98,10 @@ class ColdT3DecisionContract:
     operation_id: str; cold_authorization_id: str; authorization_fingerprint: str; evaluated_at: datetime; policy_fingerprint: str; authority_fingerprint: str; crm_evidence_ids: tuple[str, ...]; recipient_fingerprint: str; decision: str; reason_codes: tuple[str, ...]
     def __post_init__(self):
         for field in ("operation_id", "cold_authorization_id"): object.__setattr__(self, field, required_text(getattr(self, field), field, 36))
-        for field in ("authorization_fingerprint", "policy_fingerprint", "authority_fingerprint", "recipient_fingerprint"): object.__setattr__(self, field, fingerprint(getattr(self, field), field))
+        for field in ("authorization_fingerprint", "policy_fingerprint", "authority_fingerprint"): object.__setattr__(self, field, fingerprint(getattr(self, field), field))
         object.__setattr__(self, "evaluated_at", aware_utc(self.evaluated_at, "evaluated_at"))
         if self.decision not in {"ALLOWED", "BLOCKED"}: raise OutreachError("INVALID_T3_DECISION", "decision must be ALLOWED or BLOCKED")
+        if self.decision == "ALLOWED": object.__setattr__(self, "recipient_fingerprint", fingerprint(self.recipient_fingerprint, "recipient_fingerprint"))
+        elif self.recipient_fingerprint is not None: object.__setattr__(self, "recipient_fingerprint", fingerprint(self.recipient_fingerprint, "recipient_fingerprint"))
         object.__setattr__(self, "crm_evidence_ids", tuple(sorted({required_text(value, "crm_evidence_id", 36) for value in self.crm_evidence_ids})))
         object.__setattr__(self, "reason_codes", tuple(sorted({required_text(value, "reason_code", 64) for value in self.reason_codes})))
