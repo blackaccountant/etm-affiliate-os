@@ -58,3 +58,4 @@ from app.models.crm_relationships import LeadLifecycleEvent, LeadQualificationLi
 from app.models.outreach import OutreachIntent, OutreachMessage
 from app.models.outreach_delivery import OutreachDeliveryAttempt, OutreachDeliveryEvent
 from app.models.outreach_provider_dispatch import OutreachProviderDispatch, OutreachProviderReference
+from app.models.cold_prospecting import ColdProspectingAuthorization, ColdProspectingOrganizationEvidence, ColdProspectingPolicySelection
