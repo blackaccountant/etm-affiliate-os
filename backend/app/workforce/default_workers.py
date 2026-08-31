@@ -61,4 +61,13 @@ def create_default_workers():
             status=WorkerStatus.ONLINE,
         ),
 
+        # Cold-delivery orchestration is deliberately isolated from the general
+        # content-writing authority.  It still cannot resolve or send recipients.
+        WorkerInfo(
+            name="Cold Delivery Orchestrator",
+            worker_type="AI Agent",
+            capabilities=["cold_b2b_delivery"],
+            status=WorkerStatus.ONLINE,
+        ),
+
     ]
