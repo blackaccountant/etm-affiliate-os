@@ -23,6 +23,7 @@ from app.models.affiliate_conversion import AffiliateConversion
 from app.models.affiliate_earning import AffiliateEarning
 from app.models.affiliate_link import AffiliateLink
 from app.models.affiliate_program import AffiliateProgram
+from app.attribution.bridge_contracts import AttributionBridgeConflict
 
 
 class AffiliateConversionService:
@@ -62,352 +63,194 @@ class AffiliateConversionService:
         """
 
         try:
-
-            # =================================================
-            # 1. Validate affiliate program
-            # =================================================
-
-            program = (
-                self.db.query(AffiliateProgram)
-                .filter(
-                    AffiliateProgram.id
-                    == affiliate_program_id
-                )
-                .first()
-            )
-
-            if not program:
-                raise ValueError(
-                    "Affiliate program not found"
-                )
-
-            # =================================================
-            # 2. Resolve affiliate link
-            # =================================================
-
-            affiliate_link = None
-
-            if affiliate_link_id is not None:
-
-                affiliate_link = (
-                    self.db.query(AffiliateLink)
-                    .filter(
-                        AffiliateLink.id
-                        == affiliate_link_id
-                    )
-                    .first()
-                )
-
-                if not affiliate_link:
-                    raise ValueError(
-                        "Affiliate link not found"
-                    )
-
-            elif tracking_code:
-
-                affiliate_link = (
-                    self.db.query(AffiliateLink)
-                    .filter(
-                        AffiliateLink.tracking_code
-                        == tracking_code
-                    )
-                    .first()
-                )
-
-                if not affiliate_link:
-                    raise ValueError(
-                        "Affiliate tracking code not found"
-                    )
-
-            # =================================================
-            # 3. Normalize external ID
-            # =================================================
-
-            if external_conversion_id is not None:
-
-                external_conversion_id = (
-                    str(external_conversion_id).strip()
-                )
-
-                if not external_conversion_id:
-                    external_conversion_id = None
-
-            # =================================================
-            # 4. Idempotency lookup
-            # =================================================
-
-            if external_conversion_id:
-
-                existing = (
-                    self.db.query(AffiliateConversion)
-                    .filter(
-                        AffiliateConversion
-                        .affiliate_program_id
-                        == affiliate_program_id,
-                        AffiliateConversion
-                        .external_conversion_id
-                        == external_conversion_id,
-                    )
-                    .first()
-                )
-
-                if existing:
-
-                    return existing
-
-            # =================================================
-            # 5. Normalize financial values
-            # =================================================
-
-            normalized_sale_amount = Decimal(
-                str(sale_amount)
-            )
-
-            if normalized_sale_amount < 0:
-                raise ValueError(
-                    "Sale amount cannot be negative"
-                )
-
-            # =================================================
-            # 6. Determine commission
-            # =================================================
-
-            commission_type = getattr(
-                program,
-                "commission_type",
-                None,
-            )
-
-            program_value = getattr(
-                program,
-                "commission_value",
-                None,
-            )
-
-            normalized_type = (
-                str(commission_type)
-                .lower()
-                .strip()
-                if commission_type
-                else ""
-            )
-
-            # -------------------------------------------------
-            # Explicit commission rate supplied by caller
-            # -------------------------------------------------
-
-            if commission_rate is not None:
-
-                commission_rate = Decimal(
-                    str(commission_rate)
-                )
-
-                if commission_rate < 0:
-                    raise ValueError(
-                        "Commission rate cannot be negative"
-                    )
-
-            # -------------------------------------------------
-            # Commission from affiliate program
-            # -------------------------------------------------
-
-            elif (
-                program_value is not None
-                and (
-                    "percentage" in normalized_type
-                    or "percent" in normalized_type
-                    or "%" in normalized_type
-                )
-            ):
-
-                commission_rate = Decimal(
-                    str(program_value)
-                )
-
-            # -------------------------------------------------
-            # Fixed commission
-            # -------------------------------------------------
-
-            elif (
-                program_value is not None
-                and "fixed" in normalized_type
-            ):
-
-                commission_rate = Decimal("0")
-
-            # -------------------------------------------------
-            # No commission configured
-            # -------------------------------------------------
-
-            else:
-
-                commission_rate = Decimal("0")
-
-            # =================================================
-            # 7. Calculate commission
-            # =================================================
-
-            if (
-                program_value is not None
-                and "fixed" in normalized_type
-                and commission_rate == Decimal("0")
-            ):
-
-                commission_amount = Decimal(
-                    str(program_value)
-                )
-
-            else:
-
-                commission_amount = (
-                    normalized_sale_amount
-                    * commission_rate
-                    / Decimal("100")
-                )
-
-            if commission_amount < 0:
-                raise ValueError(
-                    "Commission amount cannot be negative"
-                )
-
-            # =================================================
-            # 8. Create conversion
-            # =================================================
-
-            now = datetime.utcnow()
-
-            conversion = AffiliateConversion(
-                affiliate_link_id=(
-                    affiliate_link.id
-                    if affiliate_link
-                    else None
-                ),
-                affiliate_program_id=(
-                    affiliate_program_id
-                ),
-                external_conversion_id=(
-                    external_conversion_id
-                ),
-                customer_reference=(
-                    customer_reference
-                ),
-                sale_amount=(
-                    normalized_sale_amount
-                ),
-                currency=currency.upper(),
-                conversion_status=(
-                    conversion_status.lower()
-                ),
-                commission_rate=(
-                    commission_rate
-                ),
-                commission_amount=(
-                    commission_amount
-                ),
+            conversion, _, created = self._create_conversion_uncommitted(
+                affiliate_program_id=affiliate_program_id,
+                sale_amount=sale_amount,
+                currency=currency,
+                affiliate_link_id=affiliate_link_id,
+                tracking_code=tracking_code,
+                external_conversion_id=external_conversion_id,
+                customer_reference=customer_reference,
+                conversion_status=conversion_status,
+                commission_rate=commission_rate,
                 source=source,
                 metadata_json=metadata_json,
-                created_at=now,
-                updated_at=now,
+                strict_replay=False,
             )
-
-            self.db.add(conversion)
-
-            # =================================================
-            # 9. Flush conversion
-            # =================================================
-
-            self.db.flush()
-
-            # =================================================
-            # 10. Determine earning status
-            # =================================================
-
-            earning_status = (
-                "pending"
-                if conversion_status.lower()
-                == "pending"
-                else "approved"
-            )
-
-            # =================================================
-            # 11. Create exactly ONE earning
-            # =================================================
-
-            earning = AffiliateEarning(
-                conversion_id=conversion.id,
-                affiliate_program_id=(
-                    affiliate_program_id
-                ),
-                gross_amount=(
-                    normalized_sale_amount
-                ),
-                commission_rate=(
-                    commission_rate
-                ),
-                commission_amount=(
-                    commission_amount
-                ),
-                currency=currency.upper(),
-                status=earning_status,
-                payout_reference=None,
-                paid_at=None,
-                payout_id=None,
-                created_at=now,
-                updated_at=now,
-            )
-
-            self.db.add(earning)
-
-            # =================================================
-            # 12. Atomic commit
-            # =================================================
-
-            self.db.commit()
-
-            self.db.refresh(conversion)
-
+            if created:
+                self.db.commit()
+                self.db.refresh(conversion)
             return conversion
-
         except ValueError:
-
             self.db.rollback()
             raise
-
         except IntegrityError:
-
-            # =================================================
-            # Database-level idempotency protection
-            # =================================================
-
             self.db.rollback()
-
-            if external_conversion_id:
-
-                existing = (
-                    self.db.query(
-                        AffiliateConversion
-                    )
-                    .filter(
-                        AffiliateConversion
-                        .affiliate_program_id
-                        == affiliate_program_id,
-                        AffiliateConversion
-                        .external_conversion_id
-                        == external_conversion_id,
-                    )
-                    .first()
-                )
-
+            normalized_external = self._external_id(external_conversion_id)
+            if normalized_external:
+                existing = self.db.query(AffiliateConversion).filter_by(
+                    affiliate_program_id=affiliate_program_id,
+                    external_conversion_id=normalized_external,
+                ).first()
                 if existing:
-
                     return existing
-
             raise
-
         except Exception:
-
             self.db.rollback()
             raise
+
+    @staticmethod
+    def _external_id(value: object | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    def _program_and_link(self, affiliate_program_id, affiliate_link_id, tracking_code):
+        program = self.db.query(AffiliateProgram).filter_by(id=affiliate_program_id).first()
+        if not program:
+            raise ValueError("Affiliate program not found")
+        link = None
+        if affiliate_link_id is not None:
+            link = self.db.query(AffiliateLink).filter_by(id=affiliate_link_id).first()
+            if not link:
+                raise ValueError("Affiliate link not found")
+        elif tracking_code:
+            link = self.db.query(AffiliateLink).filter_by(tracking_code=tracking_code).first()
+            if not link:
+                raise ValueError("Affiliate tracking code not found")
+        return program, link
+
+    @staticmethod
+    def _commercial_values(program, sale_amount, currency, conversion_status, commission_rate, source):
+        sale = Decimal(str(sale_amount))
+        if sale < 0:
+            raise ValueError("Sale amount cannot be negative")
+        commission_type = getattr(program, "commission_type", None)
+        program_value = getattr(program, "commission_value", None)
+        normalized_type = str(commission_type).lower().strip() if commission_type else ""
+        if commission_rate is not None:
+            rate = Decimal(str(commission_rate))
+            if rate < 0:
+                raise ValueError("Commission rate cannot be negative")
+        elif program_value is not None and any(
+            marker in normalized_type for marker in ("percentage", "percent", "%")
+        ):
+            rate = Decimal(str(program_value))
+        else:
+            rate = Decimal("0")
+        if program_value is not None and "fixed" in normalized_type and rate == 0:
+            commission = Decimal(str(program_value))
+        else:
+            commission = sale * rate / Decimal("100")
+        if commission < 0:
+            raise ValueError("Commission amount cannot be negative")
+        status = conversion_status.lower()
+        return {
+            "sale_amount": sale,
+            "currency": currency.upper(),
+            "conversion_status": status,
+            "commission_rate": rate,
+            "commission_amount": commission,
+            "source": source,
+            "earning_status": "pending" if status == "pending" else "approved",
+        }
+
+    @staticmethod
+    def _decimal_equal(left, right, quantum: str) -> bool:
+        return Decimal(str(left)).quantize(Decimal(quantum)) == Decimal(str(right)).quantize(Decimal(quantum))
+
+    def _assert_strict_replay(self, existing, link, values):
+        same = (
+            existing.affiliate_link_id == (link.id if link else None)
+            and self._decimal_equal(existing.sale_amount, values["sale_amount"], "0.01")
+            and existing.currency == values["currency"]
+            and existing.conversion_status == values["conversion_status"]
+            and self._decimal_equal(existing.commission_rate, values["commission_rate"], "0.0001")
+            and self._decimal_equal(existing.commission_amount, values["commission_amount"], "0.01")
+            and existing.source == values["source"]
+        )
+        if not same:
+            raise AttributionBridgeConflict(
+                "conversion source identity conflicts with immutable commercial input"
+            )
+
+    def _create_conversion_uncommitted(
+        self,
+        affiliate_program_id: int,
+        sale_amount: Decimal,
+        currency: str = "USD",
+        affiliate_link_id: Optional[int] = None,
+        tracking_code: Optional[str] = None,
+        external_conversion_id: Optional[str] = None,
+        customer_reference: Optional[str] = None,
+        conversion_status: str = "approved",
+        commission_rate: Optional[Decimal] = None,
+        source: str = "api",
+        metadata_json: Optional[str] = None,
+        *,
+        strict_replay: bool = False,
+    ):
+        """Create conversion and earning without committing or rolling back."""
+        program, link = self._program_and_link(
+            affiliate_program_id, affiliate_link_id, tracking_code,
+        )
+        external_id = self._external_id(external_conversion_id)
+        existing = None
+        if external_id:
+            existing = self.db.query(AffiliateConversion).filter_by(
+                affiliate_program_id=affiliate_program_id,
+                external_conversion_id=external_id,
+            ).first()
+        values = None
+        if existing is not None and not strict_replay:
+            earning = self.db.query(AffiliateEarning).filter_by(conversion_id=existing.id).one_or_none()
+            return existing, earning, False
+        values = self._commercial_values(
+            program, sale_amount, currency, conversion_status, commission_rate, source,
+        )
+        if existing is not None:
+            self._assert_strict_replay(existing, link, values)
+            earning = self.db.query(AffiliateEarning).filter_by(conversion_id=existing.id).one_or_none()
+            if earning is None:
+                raise AttributionBridgeConflict("existing conversion has no durable earning")
+            return existing, earning, False
+
+        now = datetime.utcnow()
+        conversion = AffiliateConversion(
+            affiliate_link_id=link.id if link else None,
+            affiliate_program_id=affiliate_program_id,
+            external_conversion_id=external_id,
+            customer_reference=customer_reference,
+            sale_amount=values["sale_amount"],
+            currency=values["currency"],
+            conversion_status=values["conversion_status"],
+            commission_rate=values["commission_rate"],
+            commission_amount=values["commission_amount"],
+            source=values["source"],
+            metadata_json=metadata_json,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(conversion)
+        self.db.flush()
+        earning = AffiliateEarning(
+            conversion_id=conversion.id,
+            affiliate_program_id=affiliate_program_id,
+            gross_amount=values["sale_amount"],
+            commission_rate=values["commission_rate"],
+            commission_amount=values["commission_amount"],
+            currency=values["currency"],
+            status=values["earning_status"],
+            payout_reference=None,
+            paid_at=None,
+            payout_id=None,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(earning)
+        self.db.flush()
+        return conversion, earning, True
 
     # =========================================================
     # GET SINGLE CONVERSION

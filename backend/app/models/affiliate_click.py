@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
+    UniqueConstraint,
 )
 
 from sqlalchemy.orm import relationship
@@ -25,6 +26,13 @@ from app.database.base import Base
 class AffiliateClick(Base):
 
     __tablename__ = "affiliate_clicks"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "attribution_click_id",
+            name="uq_affiliate_clicks_attribution_click_id",
+        ),
+    )
 
 
     id = Column(
@@ -63,4 +71,11 @@ class AffiliateClick(Base):
 
     affiliate_link = relationship(
         "AffiliateLink"
+    )
+
+
+    attribution_click_id = Column(
+        String(36),
+        ForeignKey("attribution_clicks.id"),
+        nullable=True,
     )

@@ -16,6 +16,8 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     ForeignKey,
+    Index,
+    text,
 )
 
 from sqlalchemy.orm import relationship
@@ -27,6 +29,16 @@ from app.database.base import Base
 class AffiliateLink(Base):
 
     __tablename__ = "affiliate_links"
+
+    __table_args__ = (
+        Index(
+            "uq_affiliate_links_attributed_tracking_code",
+            "tracking_code",
+            unique=True,
+            postgresql_where=text("attribution_context_id IS NOT NULL"),
+            sqlite_where=text("attribution_context_id IS NOT NULL"),
+        ),
+    )
 
 
     id = Column(
@@ -93,4 +105,12 @@ class AffiliateLink(Base):
 
     content_asset = relationship(
         "AffiliateContentAsset"
+    )
+
+
+    attribution_context_id = Column(
+        String(36),
+        ForeignKey("attribution_contexts.id"),
+        nullable=True,
+        index=True,
     )

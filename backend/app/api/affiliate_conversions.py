@@ -13,8 +13,13 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database.session import SessionLocal
+from app.attribution.bridge_contracts import AttributionBridgeConflict
+from app.models.affiliate_link import AffiliateLink
 from app.services.affiliate_conversion_service import (
     AffiliateConversionService,
+)
+from app.services.attribution_conversion_bridge_service import (
+    AttributionConversionBridgeService,
 )
 
 
@@ -58,6 +63,8 @@ class ConversionCreateRequest(BaseModel):
 
     metadata: Optional[dict] = None
 
+    attribution_click_key: Optional[str] = None
+
 
 @router.post("/create")
 def create_conversion(
@@ -75,19 +82,46 @@ def create_conversion(
             else None
         )
 
-        conversion = service.create_conversion(
-            affiliate_program_id=payload.affiliate_program_id,
-            sale_amount=payload.sale_amount,
-            currency=payload.currency,
-            affiliate_link_id=payload.affiliate_link_id,
-            tracking_code=payload.tracking_code,
-            external_conversion_id=payload.external_conversion_id,
-            customer_reference=payload.customer_reference,
-            conversion_status=payload.conversion_status,
-            commission_rate=payload.commission_rate,
-            source=payload.source,
-            metadata_json=metadata_json,
-        )
+        link = None
+        if payload.affiliate_link_id is not None:
+            link = db.get(AffiliateLink, payload.affiliate_link_id)
+        elif payload.tracking_code:
+            link = (
+                db.query(AffiliateLink)
+                .filter(AffiliateLink.tracking_code == payload.tracking_code)
+                .first()
+            )
+
+        if link is not None and link.attribution_context_id is not None:
+            bridge_result = AttributionConversionBridgeService(db).record(
+                affiliate_program_id=payload.affiliate_program_id,
+                sale_amount=payload.sale_amount,
+                currency=payload.currency,
+                affiliate_link_id=payload.affiliate_link_id,
+                tracking_code=payload.tracking_code,
+                external_conversion_id=payload.external_conversion_id,
+                customer_reference=payload.customer_reference,
+                conversion_status=payload.conversion_status,
+                commission_rate=payload.commission_rate,
+                source=payload.source,
+                metadata_json=metadata_json,
+                attribution_click_key=payload.attribution_click_key,
+            )
+            conversion = bridge_result["conversion"]
+        else:
+            conversion = service.create_conversion(
+                affiliate_program_id=payload.affiliate_program_id,
+                sale_amount=payload.sale_amount,
+                currency=payload.currency,
+                affiliate_link_id=payload.affiliate_link_id,
+                tracking_code=payload.tracking_code,
+                external_conversion_id=payload.external_conversion_id,
+                customer_reference=payload.customer_reference,
+                conversion_status=payload.conversion_status,
+                commission_rate=payload.commission_rate,
+                source=payload.source,
+                metadata_json=metadata_json,
+            )
 
         return {
             "success": True,
@@ -104,6 +138,13 @@ def create_conversion(
                 conversion.commission_amount
             ),
         }
+
+    except AttributionBridgeConflict as exc:
+
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        )
 
     except ValueError as exc:
 

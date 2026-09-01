@@ -4,7 +4,7 @@ Affiliate Links API
 Creates, manages, and tracks affiliate links.
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from sqlalchemy.orm import Session
@@ -17,6 +17,13 @@ from app.services.affiliate_link_service import (
 
 from app.services.affiliate_click_service import (
     AffiliateClickService,
+)
+from app.attribution.bridge_contracts import AttributionBridgeConflict
+from app.services.attribution_link_bridge_service import (
+    AttributionLinkBridgeService,
+)
+from app.services.attribution_redirect_bridge_service import (
+    AttributionRedirectBridgeService,
 )
 
 
@@ -43,17 +50,32 @@ def create_affiliate_link(
     name: str,
     destination_url: str,
     content_asset_id: int | None = None,
+    attribution_context_id: str | None = None,
     db: Session = Depends(get_db),
 ):
 
-    service = AffiliateLinkService(db)
-
-    link = service.create_link(
-        affiliate_program_id=affiliate_program_id,
-        name=name,
-        destination_url=destination_url,
-        content_asset_id=content_asset_id,
-    )
+    if attribution_context_id is None:
+        service = AffiliateLinkService(db)
+        link = service.create_link(
+            affiliate_program_id=affiliate_program_id,
+            name=name,
+            destination_url=destination_url,
+            content_asset_id=content_asset_id,
+        )
+    else:
+        try:
+            bridge = AttributionLinkBridgeService(db)
+            link = bridge.create_bound_link(
+                affiliate_program_id=affiliate_program_id,
+                attribution_context_id=attribution_context_id,
+                name=name,
+                destination_url=destination_url,
+                content_asset_id=content_asset_id,
+            )
+        except AttributionBridgeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     return {
         "success": True,
@@ -61,6 +83,29 @@ def create_affiliate_link(
         "tracking_code": link.tracking_code,
         "destination_url": link.destination_url,
     }
+
+
+@router.post("/{link_id}/attribution-context/{context_id}")
+def bind_affiliate_link_attribution_context(
+    link_id: int,
+    context_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        link, _fact = AttributionLinkBridgeService(db).bind_existing(
+            affiliate_link_id=link_id,
+            attribution_context_id=context_id,
+        )
+        return {
+            "success": True,
+            "id": link.id,
+            "tracking_code": link.tracking_code,
+            "destination_url": link.destination_url,
+        }
+    except AttributionBridgeConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/{tracking_code}")
@@ -94,6 +139,10 @@ def get_affiliate_link(
 def track_and_redirect(
     tracking_code: str,
     request: Request,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+    ),
     db: Session = Depends(get_db),
 ):
 
@@ -117,19 +166,28 @@ def track_and_redirect(
             "message": "Affiliate link is inactive"
         }
 
-    click_service = AffiliateClickService(db)
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
 
-    click_service.record_click(
-        tracking_code=tracking_code,
-        ip_address=(
-            request.client.host
-            if request.client
-            else None
-        ),
-        user_agent=request.headers.get(
-            "user-agent"
-        ),
-    )
+    if link.attribution_context_id is None:
+        click_service = AffiliateClickService(db)
+        click_service.record_click(
+            tracking_code=tracking_code,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    else:
+        try:
+            AttributionRedirectBridgeService(db).record(
+                tracking_code=tracking_code,
+                event_id=idempotency_key,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+        except AttributionBridgeConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     return RedirectResponse(
         url=link.destination_url,

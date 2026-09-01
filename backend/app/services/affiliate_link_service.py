@@ -54,40 +54,39 @@ class AffiliateLinkService:
         destination_url: str,
         content_asset_id: int | None = None,
     ):
-
-
-        tracking_code = (
-            self.generate_tracking_code()
-        )
-
-
-        link = AffiliateLink(
-
-            affiliate_program_id=
-            affiliate_program_id,
-
-            content_asset_id=
-            content_asset_id,
-
+        link = self._create_link_uncommitted(
+            affiliate_program_id=affiliate_program_id,
             name=name,
-
-            destination_url=
-            destination_url,
-
-            tracking_code=
-            tracking_code,
-
-            is_active=True
+            destination_url=destination_url,
+            content_asset_id=content_asset_id,
         )
-
-
-        self.db.add(link)
-
         self.db.commit()
-
         self.db.refresh(link)
+        return link
 
 
+    def _create_link_uncommitted(
+        self,
+        affiliate_program_id: int,
+        name: str,
+        destination_url: str,
+        content_asset_id: int | None = None,
+        *,
+        attribution_context_id: str | None = None,
+        tracking_code: str | None = None,
+    ):
+        """Create and flush a link without owning the caller's transaction."""
+        link = AffiliateLink(
+            affiliate_program_id=affiliate_program_id,
+            content_asset_id=content_asset_id,
+            attribution_context_id=attribution_context_id,
+            name=name,
+            destination_url=destination_url,
+            tracking_code=tracking_code or self.generate_tracking_code(),
+            is_active=True,
+        )
+        self.db.add(link)
+        self.db.flush()
         return link
 
 
