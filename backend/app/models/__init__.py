@@ -61,5 +61,5 @@ from app.models.outreach_provider_dispatch import OutreachProviderDispatch, Outr
 from app.models.cold_prospecting import ColdProspectingAuthorization, ColdProspectingOrganizationEvidence, ColdProspectingPolicySelection
 from app.models.cold_delivery import (
     ColdDeliveryOperation, ColdMessageContent, ColdDeliveryOperationState, ColdDeliveryEvent,
-    ColdT3Decision, ColdProviderDispatch, ColdProviderDispatchReference, ColdProviderFeedbackReceipt,
+    ColdT3Decision, ColdDispatchReservation, ColdProviderDispatch, ColdProviderDispatchReference, ColdProviderFeedbackReceipt,
 )

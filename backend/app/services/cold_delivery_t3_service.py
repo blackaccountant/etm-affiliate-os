@@ -58,6 +58,8 @@ class ColdDeliveryT3Service:
         operation = self.db.get(ColdDeliveryOperation, operation_id)
         if state is None or operation is None or state.current_state != "READY": raise OutreachError("T3_STATE_UNAVAILABLE", "cold delivery operation is not READY")
         fence = f"{authority.lease_owner}:{authority.lease_generation}"
+        expected_revision = state.revision
+        event_sequence = state.next_event_sequence
         if state.active_execution_id != str(authority.execution_id) or state.active_fence_identity != fence: raise OutreachError("STALE_AUTHORITY", "cold delivery execution authority was superseded")
         lead = self.db.query(Lead).filter_by(id=operation.lead_id).with_for_update().one_or_none()
         point = self.db.query(ContactPoint).filter_by(id=operation.contact_point_id).with_for_update().one_or_none()
@@ -87,10 +89,10 @@ class ColdDeliveryT3Service:
             except Exception: reasons.append("RECIPIENT_RESOLUTION_FAILED")
         decision = "BLOCKED" if reasons else "ALLOWED"; target = "T3_BLOCKED" if reasons else "DISPATCH_PLANNED"
         auth_fp = auth.request_fingerprint if valid_binding else sha256_fingerprint({"operation_id": operation.id, "binding": "mismatch"})
-        authority_fp = sha256_fingerprint({"operation_id": operation.id, "authorization_id": operation.cold_authorization_id, "state_revision": state.revision, "fence": fence, "content_fingerprint": operation.message_content_fingerprint})
-        source_key = f"{operation.id}:{state.revision}:{authority.execution_id}:{authority.lease_generation}"
+        authority_fp = sha256_fingerprint({"operation_id": operation.id, "authorization_id": operation.cold_authorization_id, "state_revision": expected_revision, "fence": fence, "content_fingerprint": operation.message_content_fingerprint})
+        source_key = f"{operation.id}:{expected_revision}:{authority.execution_id}:{authority.lease_generation}"
         self.db.add(ColdT3Decision(operation_id=operation.id, cold_authorization_id=operation.cold_authorization_id, authorization_fingerprint=auth_fp, evaluated_at=now, policy_fingerprint=assessment.decision_fingerprint, authority_fingerprint=authority_fp, crm_evidence_ids=[x for x in (auth.organization_evidence_id if auth else None, auth.policy_selection_id if auth else None, state_fact.winning_event_id, permission.winning_event_id, *suppression.winning_event_ids) if x], recipient_fingerprint=recipient_fp, decision=decision, reason_codes=sorted(set(reasons or ["T3_ALLOWED"])), decision_schema_version="cold-t3-decision-v1", source_namespace="cold-b2b-t3-v1", source_event_key=source_key))
-        updated = self.db.execute(update(ColdDeliveryOperationState).where(ColdDeliveryOperationState.operation_id == operation.id, ColdDeliveryOperationState.revision == state.revision, ColdDeliveryOperationState.active_execution_id == str(authority.execution_id), ColdDeliveryOperationState.active_fence_identity == fence).values(current_state=target, revision=state.revision + 1, next_event_sequence=state.next_event_sequence + 1, updated_at=now))
+        updated = self.db.execute(update(ColdDeliveryOperationState).where(ColdDeliveryOperationState.operation_id == operation.id, ColdDeliveryOperationState.revision == expected_revision, ColdDeliveryOperationState.next_event_sequence == event_sequence, ColdDeliveryOperationState.active_execution_id == str(authority.execution_id), ColdDeliveryOperationState.active_fence_identity == fence).values(current_state=target, revision=expected_revision + 1, next_event_sequence=event_sequence + 1, updated_at=now))
         if updated.rowcount != 1: self.db.rollback(); raise OutreachError("STALE_AUTHORITY", "cold delivery state was superseded")
-        self.db.add(ColdDeliveryEvent(operation_id=operation.id, sequence_number=state.next_event_sequence, event_type=f"T3_{decision}", occurred_at=now, source_namespace="cold-b2b-t3-v1", source_event_key=source_key, event_fingerprint=sha256_fingerprint({"operation_id": operation.id, "decision": decision, "revision": state.revision, "authority": authority_fp}), safe_payload={"decision": decision, "reason_codes": sorted(set(reasons or ["T3_ALLOWED"]))}))
+        self.db.add(ColdDeliveryEvent(operation_id=operation.id, sequence_number=event_sequence, event_type=f"T3_{decision}", occurred_at=now, source_namespace="cold-b2b-t3-v1", source_event_key=source_key, event_fingerprint=sha256_fingerprint({"operation_id": operation.id, "decision": decision, "revision": expected_revision, "authority": authority_fp}), safe_payload={"decision": decision, "reason_codes": sorted(set(reasons or ["T3_ALLOWED"]))}))
         self.db.flush(); self.db.commit(); return {"operation_id": operation.id, "decision": decision, "state": target}

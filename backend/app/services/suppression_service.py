@@ -26,6 +26,9 @@ class SuppressionService:
                 raise CRMError("CONTACT_POINT_NOT_FOUND", "contact point does not exist")
             if contact_point.lead_id != lead.id:
                 raise CRMError("SUPPRESSION_OWNERSHIP_CONFLICT", "contact point does not belong to Lead")
+        # Serialize every already-created cold authority this suppression can invalidate.
+        from app.crm.cold_fact_lock import lock_affected_cold_operations
+        lock_affected_cold_operations(self.db, lead.id, value.contact_point_id, None)
         event = SuppressionEvent(
             lead_id=lead.id,
             contact_point_id=value.contact_point_id,

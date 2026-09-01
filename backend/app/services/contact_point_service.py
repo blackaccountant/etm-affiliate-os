@@ -39,6 +39,8 @@ class ContactPointService:
 
     def attach_provenance(self, contact_point_id: str, value: ContactPointProvenanceInput):
         contact_point = self._contact(contact_point_id)
+        from app.crm.cold_fact_lock import lock_affected_cold_operations
+        lock_affected_cold_operations(self.db, contact_point.lead_id, contact_point.id)
         if not isinstance(value, ContactPointProvenanceInput):
             raise CRMError("INVALID_CONTRACT", "provenance input must be typed")
         record = ContactPointProvenance(
@@ -56,6 +58,8 @@ class ContactPointService:
 
     def append_state_event(self, contact_point_id: str, value: ContactPointStateEventInput):
         contact_point = self._contact(contact_point_id)
+        from app.crm.cold_fact_lock import lock_affected_cold_operations
+        lock_affected_cold_operations(self.db, contact_point.lead_id, contact_point.id)
         if not isinstance(value, ContactPointStateEventInput):
             raise CRMError("INVALID_CONTRACT", "state-event input must be typed")
         record = ContactPointStateEvent(

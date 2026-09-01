@@ -72,7 +72,7 @@ class ColdMessageContent(Base):
 class ColdDeliveryOperationState(Base):
     __tablename__ = "cold_delivery_operation_state"
     __table_args__ = (
-        CheckConstraint("current_state IN ('CREATED','READY','T3_BLOCKED','DISPATCH_PLANNED','DISPATCHING','ACCEPTED','REJECTED','TECHNICAL_RETRY_DUE','RECONCILIATION_REQUIRED','UNRESOLVED_TERMINAL')", name="ck_cold_delivery_operation_state_value"),
+        CheckConstraint("current_state IN ('CREATED','READY','T3_BLOCKED','DISPATCH_PLANNED','PRE_SEND_BLOCKED','DISPATCHING','ACCEPTED','REJECTED','TECHNICAL_RETRY_DUE','RECONCILIATION_REQUIRED','UNRESOLVED_TERMINAL')", name="ck_cold_delivery_operation_state_value"),
         CheckConstraint("revision >= 1", name="ck_cold_delivery_operation_state_revision"),
         CheckConstraint("next_event_sequence >= 1", name="ck_cold_delivery_operation_state_sequence"),
     )
@@ -85,6 +85,34 @@ class ColdDeliveryOperationState(Base):
     next_technical_retry_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     reconciliation_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class ColdDispatchReservation(Base):
+    """The one logical, provider-free authority for a later B4B send."""
+    __tablename__ = "cold_dispatch_reservations"
+    __table_args__ = (
+        UniqueConstraint("operation_id", name="uq_cold_dispatch_reservations_operation"),
+        UniqueConstraint("reservation_id", name="uq_cold_dispatch_reservations_id"),
+        CheckConstraint("length(idempotency_key) = 64", name="ck_cold_dispatch_reservations_idempotency"),
+        CheckConstraint("length(recipient_fingerprint) = 64", name="ck_cold_dispatch_reservations_recipient"),
+        CheckConstraint("length(content_fingerprint) = 64", name="ck_cold_dispatch_reservations_content"),
+        CheckConstraint("length(sender_fingerprint) = 64", name="ck_cold_dispatch_reservations_sender"),
+        CheckConstraint("length(provider_payload_fingerprint) = 64", name="ck_cold_dispatch_reservations_payload"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    reservation_id: Mapped[str] = mapped_column(String(64), nullable=False, default=lambda: uuid4().hex)
+    operation_id: Mapped[str] = mapped_column(ForeignKey("cold_delivery_operations.id"), nullable=False)
+    provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_contract_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    execution_fence_identity: Mapped[str] = mapped_column(String(255), nullable=False)
+    expected_state_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    recipient_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    content_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    sender_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_payload_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    reserved_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
 
 
 class ColdDeliveryEvent(Base):

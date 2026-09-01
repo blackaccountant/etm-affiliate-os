@@ -29,6 +29,9 @@ class PermissionService:
             raise CRMError("INVALID_CONTRACT", "permission input must be typed")
         if value.channel not in _COMPATIBLE_CHANNELS[contact_point.kind]:
             raise CRMError("CHANNEL_KIND_MISMATCH", "channel is incompatible with contact-point kind")
+        if value.channel == "EMAIL":
+            from app.crm.cold_fact_lock import lock_affected_cold_operations
+            lock_affected_cold_operations(self.db, contact_point.lead_id, contact_point.id, value.purpose_key)
         event = PermissionEvent(
             contact_point_id=contact_point.id,
             channel=value.channel,
