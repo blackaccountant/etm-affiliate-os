@@ -63,3 +63,4 @@ from app.models.cold_delivery import (
     ColdDeliveryOperation, ColdMessageContent, ColdDeliveryOperationState, ColdDeliveryEvent,
     ColdT3Decision, ColdDispatchReservation, ColdProviderDispatch, ColdProviderDispatchReference, ColdProviderFeedbackReceipt,
 )
+from app.models.attribution import AttributionPublication, AttributionContext, AttributionClick, AttributionFact
