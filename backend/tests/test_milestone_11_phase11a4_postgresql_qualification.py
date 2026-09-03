@@ -31,7 +31,7 @@ from app.services.eligible_operating_profit_candidate_set_service import Eligibl
 ROLE, RAW = os.getenv("ETM_G5_M11A4_DB_ROLE"), os.getenv("ETM_G5_M11A4_DATABASE_URL")
 if not RAW: pytest.skip("requires guarded M11A4 URL", allow_module_level=True)
 URL = make_url(RAW)
-if ROLE != "qualification" or not URL.drivername.startswith("postgresql") or URL.host != "127.0.0.1" or URL.port != 5432 or URL.database != "etm_g5_m11a4_eligible_operating_profit_candidate_set_qualification": raise RuntimeError("M11A4 database guard failed")
+if ROLE != "qualification" or not URL.drivername.startswith("postgresql") or URL.host != "127.0.0.1" or URL.port != 5432 or URL.database != "etm_g5_m11a4_candidate_set_qualification": raise RuntimeError("M11A4 database guard failed")
 def _session(): return sessionmaker(bind=create_engine(URL.render_as_string(hide_password=False)), expire_on_commit=False)()
 def _settled(*, product_id=None, program_id=None, currency="USD"):
     db, token = _session(), uuid4().hex
