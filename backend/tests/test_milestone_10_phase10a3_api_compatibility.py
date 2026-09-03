@@ -28,13 +28,29 @@ from app.services.attribution_context_service import AttributionContextService
 from app.services.attribution_publication_service import AttributionPublicationService
 
 
+REQUIRED_TABLE_NAMES = (
+    "affiliate_clicks", "affiliate_content_assets", "affiliate_conversions",
+    "affiliate_earnings", "affiliate_links", "affiliate_payouts",
+    "affiliate_programs", "attribution_clicks", "attribution_contexts",
+    "attribution_facts", "attribution_publications", "content_briefs",
+    "content_evaluations", "content_generation_runs", "discovery_candidates",
+    "discovery_runs", "distribution_runs", "generated_content_artifacts",
+    "products", "publishing_queue",
+)
+
+
 @pytest.fixture()
 def api(tmp_path):
     engine = create_engine(
         f"sqlite:///{tmp_path / 'm10a3-api.sqlite'}",
         connect_args={"check_same_thread": False},
     )
-    Base.metadata.create_all(engine)
+    missing = tuple(name for name in REQUIRED_TABLE_NAMES if name not in Base.metadata.tables)
+    assert not missing, f"missing M10A3 compatibility tables: {missing}"
+    Base.metadata.create_all(
+        engine,
+        tables=tuple(Base.metadata.tables[name] for name in REQUIRED_TABLE_NAMES),
+    )
     Session = sessionmaker(bind=engine, expire_on_commit=False)
 
     def override_db():

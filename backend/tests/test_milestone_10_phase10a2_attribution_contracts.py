@@ -89,12 +89,20 @@ def test_allowed_fact_contracts_and_correction_requirement():
 
 def test_repositories_and_services_do_not_own_transactions():
     root = Path(__file__).parents[1] / "app"
-    files = [
-        *root.joinpath("repositories").glob("attribution_*_repository.py"),
-        *root.joinpath("services").glob("attribution_*_service.py"),
-    ]
-    assert len(files) == 8
+    relative_paths = (
+        "repositories/attribution_click_repository.py",
+        "repositories/attribution_context_repository.py",
+        "repositories/attribution_fact_repository.py",
+        "repositories/attribution_publication_repository.py",
+        "services/attribution_click_service.py",
+        "services/attribution_context_service.py",
+        "services/attribution_fact_service.py",
+        "services/attribution_publication_service.py",
+    )
+    assert len(relative_paths) == 8
+    files = tuple(root / relative_path for relative_path in relative_paths)
     for path in files:
+        assert path.is_file(), f"missing frozen M10A2 transaction-neutral authority: {path}"
         source = path.read_text(encoding="utf-8")
         assert ".commit(" not in source
         assert ".rollback(" not in source
