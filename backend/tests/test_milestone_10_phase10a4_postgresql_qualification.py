@@ -244,7 +244,7 @@ def test_populated_upgrade_downgrade_and_unowned_object_preservation():
         assert MigrationContext.configure(connection).get_current_revision() == "b4c5d6e7f8a9"
         assert "attribution_earning_links" not in inspect(connection).get_table_names()
         assert connection.execute(text("SELECT m10a4_unowned_probe()")).scalar_one() == 42
-    command.upgrade(config, "head")
+    command.upgrade(config, "c5d6e7f8a9b0")
     with engine.connect() as connection:
         assert MigrationContext.configure(connection).get_current_revision() == REVISION
         assert "attribution_earning_links" in inspect(connection).get_table_names()

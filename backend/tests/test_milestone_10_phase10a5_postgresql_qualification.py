@@ -343,7 +343,7 @@ def test_populated_upgrade_downgrade_and_unowned_object_preservation():
         assert MigrationContext.configure(connection).get_current_revision() == "c5d6e7f8a9b0"
         assert "attribution_payout_settlement_links" not in inspect(connection).get_table_names()
         assert connection.execute(text("SELECT m10a5_unowned_probe()")).scalar_one() == 42
-    command.upgrade(config, "head")
+    command.upgrade(config, "d6e7f8a9b0c1")
     with engine.connect() as connection:
         assert MigrationContext.configure(connection).get_current_revision() == REVISION
         assert "attribution_payout_settlement_links" in inspect(connection).get_table_names()

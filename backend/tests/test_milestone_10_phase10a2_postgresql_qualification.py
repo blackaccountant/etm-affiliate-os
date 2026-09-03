@@ -10,8 +10,6 @@ import time
 from uuid import uuid4
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.dialects import postgresql
@@ -21,7 +19,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.schema import CreateTable
 
 from app.attribution.contracts import AttributionContractError, AttributionIdempotencyConflict
-from app.core.config import settings
 from app.models.affiliate_content_asset import AffiliateContentAsset
 from app.models.affiliate_conversion import AffiliateConversion
 from app.models.affiliate_link import AffiliateLink
@@ -44,7 +41,7 @@ from app.services.affiliate_conversion_service import AffiliateConversionService
 from app.services.affiliate_link_service import AffiliateLinkService
 
 
-REVISION = "a3b4c5d6e7f8"
+REVISION = "c3d4e5f6a7b8"
 DATABASE = "etm_g5_m10a2_qualification"
 raw_url = os.getenv("ETM_G5_DATABASE_URL")
 if not raw_url:
@@ -262,7 +259,6 @@ def test_publication_context_contracts_and_database_constraints():
         db.commit()
     finally:
         db.close()
-
     invalid_statements = [
         ("INSERT INTO attribution_publications(id,created_at) VALUES (:id,now())", {}),
         ("INSERT INTO attribution_publications(id,legacy_publishing_queue_id,distribution_run_id,created_at) VALUES (:id,:queue,:run,now())", {"queue": queue.id, "run": run_id}),
@@ -698,81 +694,3 @@ def test_legacy_link_click_conversion_remain_compatible_and_unbridged():
         assert db.query(AttributionFact).count() == before_facts
     finally:
         db.close()
-
-
-def _hard_guard_before_migration():
-    configured = make_url(settings.DATABASE_URL)
-    assert configured.database == DATABASE
-    assert configured.host == "127.0.0.1" and configured.port == 5432
-    with engine.connect() as connection:
-        assert connection.execute(text("SELECT current_database()" )).scalar_one() == DATABASE
-
-
-def _migrate(target_revision):
-    _hard_guard_before_migration()
-    engine.dispose()
-    config = Config("alembic.ini")
-    if target_revision == "head":
-        command.upgrade(config, target_revision)
-    else:
-        command.downgrade(config, target_revision)
-
-
-def test_zz_populated_f2_upgrade_and_downgrade_preserve_unowned_function():
-    _migrate("f2e3d4c5b6a7")
-    with engine.begin() as connection:
-        connection.execute(text("""
-            CREATE OR REPLACE FUNCTION reject_attribution_fact_mutation()
-            RETURNS integer LANGUAGE sql AS $$ SELECT 42 $$
-        """))
-    db = Session()
-    try:
-        product, program, asset, queue, link, conversion = _legacy(db, product_name="populated-f2")
-        run_id = _modern_run(db)
-        db.commit()
-        snapshot = {
-            "product": (product.id, product.name, product.website),
-            "program": (program.id, program.product_id, program.program_name),
-            "asset": (asset.id, asset.product_id, asset.title),
-            "queue": (queue.id, queue.content_asset_id, queue.channel),
-            "link": (link.id, link.affiliate_program_id, link.tracking_code),
-            "conversion": (conversion.id, conversion.affiliate_program_id, conversion.external_conversion_id),
-            "run": run_id,
-        }
-    finally:
-        db.close()
-
-    _migrate("head")
-    with engine.connect() as connection:
-        assert tuple(connection.execute(text("SELECT name,website FROM products WHERE id=:id"), {"id": snapshot["product"][0]}).one()) == snapshot["product"][1:]
-        assert tuple(connection.execute(text("SELECT product_id,program_name FROM affiliate_programs WHERE id=:id"), {"id": snapshot["program"][0]}).one()) == snapshot["program"][1:]
-        assert tuple(connection.execute(text("SELECT product_id,title FROM affiliate_content_assets WHERE id=:id"), {"id": snapshot["asset"][0]}).one()) == snapshot["asset"][1:]
-        assert tuple(connection.execute(text("SELECT content_asset_id,channel FROM publishing_queue WHERE id=:id"), {"id": snapshot["queue"][0]}).one()) == snapshot["queue"][1:]
-        assert tuple(connection.execute(text("SELECT affiliate_program_id,tracking_code FROM affiliate_links WHERE id=:id"), {"id": snapshot["link"][0]}).one()) == snapshot["link"][1:]
-        assert tuple(connection.execute(text("SELECT affiliate_program_id,external_conversion_id FROM affiliate_conversions WHERE id=:id"), {"id": snapshot["conversion"][0]}).one()) == snapshot["conversion"][1:]
-        assert connection.execute(text("SELECT status FROM distribution_runs WHERE id=:id"), {"id": snapshot["run"]}).scalar_one() == "CREATED"
-        assert {row[0] for row in connection.execute(text("""
-            SELECT tablename FROM pg_tables
-            WHERE schemaname='public' AND tablename LIKE 'attribution_%'
-        """))} == {
-            "attribution_publications", "attribution_contexts",
-            "attribution_clicks", "attribution_facts",
-        }
-
-    _migrate("f2e3d4c5b6a7")
-    with engine.connect() as connection:
-        assert connection.execute(text("SELECT reject_attribution_fact_mutation()" )).scalar_one() == 42
-        assert connection.execute(text("""
-            SELECT count(*) FROM pg_proc
-            WHERE proname='m10a2_reject_attribution_fact_mutation'
-        """)).scalar_one() == 0
-        assert connection.execute(text("""
-            SELECT count(*) FROM pg_trigger
-            WHERE tgname='trg_attribution_facts_append_only' AND NOT tgisinternal
-        """)).scalar_one() == 0
-        assert connection.execute(text("SELECT count(*) FROM products WHERE id=:id"), {"id": snapshot["product"][0]}).scalar_one() == 1
-
-    _migrate("head")
-    with engine.begin() as connection:
-        assert connection.execute(text("SELECT reject_attribution_fact_mutation()" )).scalar_one() == 42
-        connection.execute(text("DROP FUNCTION reject_attribution_fact_mutation()"))

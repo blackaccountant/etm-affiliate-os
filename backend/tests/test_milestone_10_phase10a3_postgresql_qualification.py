@@ -324,7 +324,7 @@ def test_migration_upgrade_downgrade_owns_only_m10a3_objects():
             table: c.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
             for table in before
         } == before
-    command.upgrade(config, "head")
+    command.upgrade(config, "b4c5d6e7f8a9")
     with engine.connect() as c:
         assert MigrationContext.configure(c).get_current_revision() == REVISION
         assert c.execute(text("SELECT to_regprocedure('m10a3_reject_link_context_rebinding()')")).scalar_one()
