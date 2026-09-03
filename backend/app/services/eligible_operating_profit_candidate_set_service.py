@@ -14,8 +14,8 @@ from app.services.operating_profit_evidence_eligibility_service import (
 
 
 class EligibleOperatingProfitCandidateSetService:
-    def __init__(self, db):
-        self._eligibility = OperatingProfitEvidenceEligibilityService(db)
+    def __init__(self, db, *, eligibility_service=None):
+        self._eligibility = OperatingProfitEvidenceEligibilityService(db) if eligibility_service is None else eligibility_service
 
     def project(self, request):
         normalized = request.normalized()

@@ -3,7 +3,7 @@ from app.optimization.operating_profit_evidence_eligibility_contracts import *
 from app.optimization.operating_profit_evidence_contracts import OperatingProfitEvidenceRequest
 from app.services.operating_profit_evidence_service import OperatingProfitEvidenceService
 class OperatingProfitEvidenceEligibilityService:
- def __init__(self,db): self._evidence=OperatingProfitEvidenceService(db)
+ def __init__(self,db,*,evidence_service=None): self._evidence=OperatingProfitEvidenceService(db) if evidence_service is None else evidence_service
  def project(self,request):
   r=request.normalized(); rows=self._evidence.project(OperatingProfitEvidenceRequest(r.dimensions,r.currency)); out=[]; p=r.policy
   for e in rows:

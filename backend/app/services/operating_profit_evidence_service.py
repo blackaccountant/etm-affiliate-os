@@ -18,8 +18,8 @@ from app.services.operating_profit_signal_service import OperatingProfitSignalSe
 class OperatingProfitEvidenceService:
     """Expose non-financial settled-lineage measurements aligned to M11A1 buckets."""
 
-    def __init__(self, db):
-        self._signals = OperatingProfitSignalService(db)
+    def __init__(self, db, *, signal_service=None):
+        self._signals = OperatingProfitSignalService(db) if signal_service is None else signal_service
         self._settled_lineage = AttributionRealizedRevenueProjectionRepository(db)
         self._observations = OperatingProfitEvidenceRepository(db)
 
