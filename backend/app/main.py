@@ -35,6 +35,9 @@ from app.api.optimization_recommendation_routes import (
 from app.api.optimization_approval_routes import (
     router as optimization_approval_router,
 )
+from app.api.optimization_experiment_design_routes import (
+    router as optimization_experiment_design_router,
+)
 
 
 # -----------------------------------------------------
@@ -319,4 +322,9 @@ app.include_router(
 
 app.include_router(
     optimization_approval_router,
+)
+
+
+app.include_router(
+    optimization_experiment_design_router,
 )
