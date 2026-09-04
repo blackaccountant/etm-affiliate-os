@@ -18,6 +18,9 @@ class DiscoveryQueryService:
     def get_run(self, run_id):
         return self.runs.get_by_id(run_id)
 
+    def list_runs(self, limit: int = 50):
+        return self.runs.list_recent(limit=limit)
+
     def list_candidates(self, run_id):
         return self.candidates.list_by_run(run_id)
 

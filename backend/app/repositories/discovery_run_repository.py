@@ -50,6 +50,18 @@ class DiscoveryRunRepository:
     def get_by_id(self, run_id: str) -> DiscoveryRun | None:
         return self.db.get(DiscoveryRun, run_id)
 
+    def list_recent(self, limit: int = 50) -> list[DiscoveryRun]:
+        """Return newest durable runs first; this query performs no writes."""
+        return (
+            self.db.query(DiscoveryRun)
+            .order_by(
+                DiscoveryRun.created_at.desc(),
+                DiscoveryRun.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )
+
     def get_by_idempotency_key(self, idempotency_key: str) -> DiscoveryRun | None:
         return self.db.query(DiscoveryRun).filter(DiscoveryRun.idempotency_key == idempotency_key).first()
 

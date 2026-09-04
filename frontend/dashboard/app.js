@@ -6,6 +6,18 @@ const state={
   workers:[],
   events:[],
   products:[],
+  opportunities:{
+    status:"idle",
+    runs:[],
+    error:null,
+    selectedRunId:null,
+    detailStatus:"idle",
+    candidates:[],
+    ranking:[],
+    selected:[],
+    evidence:{},
+    evidenceStatus:{}
+  },
   distribution:{status:"idle",queue:[],error:null},
   commissions:{
     earningsStatus:"idle",
@@ -61,6 +73,7 @@ async function refreshData({silent=false}={}){
     workersData,
     eventsData,
     productsData,
+    discoveryRunsData,
     publishingQueueData,
     earningsData,
     payoutsData
@@ -70,6 +83,7 @@ async function refreshData({silent=false}={}){
     api("/system/workers"),
     api("/system/events"),
     api("/products/"),
+    api("/discovery/runs?limit=50"),
     api("/publisher/queue"),
     api("/affiliate-earnings/?limit=100"),
     api("/affiliate-payouts/?limit=100")
@@ -80,6 +94,13 @@ async function refreshData({silent=false}={}){
   state.workers=Array.isArray(workersData)?workersData:[];
   state.events=Array.isArray(eventsData)?eventsData:[];
   state.products=normalizeProducts(productsData);
+
+  state.opportunities={
+    ...state.opportunities,
+    status:discoveryRunsData?"success":"error",
+    runs:Array.isArray(discoveryRunsData)?discoveryRunsData:[],
+    error:discoveryRunsData?null:"Discovery run index API unavailable."
+  };
 
   state.distribution={
     status:publishingQueueData?"success":"error",
@@ -698,6 +719,61 @@ async function projectExperimentDesigns(){
   }
 }
 
+/* UIF5B — Read-Only Opportunities Visibility */
+function opportunityCandidateName(candidate){
+  return candidate.program_name||candidate.vendor_name||candidate.canonical_domain||candidate.program_identity_key||candidate.id||"Unnamed candidate";
+}
+function opportunityEvidenceValue(value){
+  if(value===null||value===undefined)return "—";
+  if(typeof value==="object"){try{return JSON.stringify(value)}catch(_error){return String(value)}}
+  return String(value);
+}
+function opportunityEvidenceBlock(candidateId){
+  const surface=state.opportunities;
+  const status=surface.evidenceStatus[candidateId]||"idle";
+  const rows=surface.evidence[candidateId]||[];
+  if(status==="loading")return `<div class="opportunity-evidence-state"><div class="spinner"></div><span>Loading durable evidence…</span></div>`;
+  if(status==="error")return `<div class="operations-error">Evidence could not be loaded for this candidate.</div>`;
+  if(status!=="success")return "";
+  if(!rows.length)return `<div class="empty opportunity-evidence-empty">The evidence API is live and returned no observations for this candidate.</div>`;
+  return `<div class="opportunity-evidence-list">${rows.map(item=>`<div class="opportunity-evidence-row"><div><strong>${esc(item.claim_type||"Evidence observation")}</strong><span>${esc(opportunityEvidenceValue(item.observed_value))}</span>${item.excerpt?`<small>${esc(item.excerpt)}</small>`:""}</div><dl><div><dt>Source</dt><dd>${esc(item.source_type||"—")}</dd></div><div><dt>Confidence</dt><dd>${esc(item.confidence??"—")}</dd></div><div><dt>Observed</dt><dd>${esc(dateTime(item.observed_at))}</dd></div></dl></div>`).join("")}</div>`;
+}
+function opportunityRunDetail(){
+  const surface=state.opportunities;
+  const run=surface.runs.find(item=>item.id===surface.selectedRunId);
+  if(!surface.selectedRunId)return `<div class="recommendation-state opportunity-detail-state"><strong>Select a discovery run</strong><span>Choose a durable run on the left to read its candidates, frozen ranking, selected opportunities, and evidence.</span></div>`;
+  if(surface.detailStatus==="loading")return `<div class="recommendation-state opportunity-detail-state"><div class="spinner"></div><strong>Loading discovery ledger…</strong><span>Read-only candidate, ranking, and selection APIs are being queried.</span></div>`;
+  if(surface.detailStatus==="error")return `<div class="recommendation-state error-state opportunity-detail-state"><strong>Discovery detail unavailable</strong><span>The selected run could not be read from one or more discovery APIs.</span></div>`;
+  if(!run)return `<div class="recommendation-state error-state opportunity-detail-state"><strong>Run no longer present</strong><span>Refresh the run list and select another durable discovery run.</span></div>`;
+  const selectedIds=new Set((surface.selected||[]).map(item=>item.id));
+  const ranked=surface.ranking||[];
+  const candidates=surface.candidates||[];
+  return `<div class="opportunity-detail"><div class="opportunity-run-summary"><div><span class="result-kicker">DISCOVERY RUN</span><h4>${esc(run.input_value)}</h4><p>${esc(run.input_type)} · ${esc(run.id)}</p></div><span class="status-pill ${operationStatusClass(run.status)}">${esc(run.status||"UNKNOWN")}</span></div><div class="opportunity-summary-grid"><div><span>Candidates</span><strong>${esc(run.candidate_count)}</strong></div><div><span>Verified</span><strong>${esc(run.verified_count)}</strong></div><div><span>Selected</span><strong>${esc(run.selected_count)}</strong></div><div><span>Created</span><strong>${esc(dateTime(run.created_at))}</strong></div></div>${run.last_error?`<div class="operations-error"><strong>Run error:</strong> ${esc(run.last_error)}</div>`:""}<section class="opportunity-subsection"><div class="approval-subhead"><strong>Frozen Ranking</strong><span>${ranked.length} ranked</span></div>${ranked.length?`<div class="opportunity-ranking-list">${ranked.map(item=>{const candidate=item.candidate||{};const selected=selectedIds.has(candidate.id);const evidenceStatus=surface.evidenceStatus[candidate.id]||"idle";return `<article class="opportunity-candidate-card ${selected?"selected":""}"><div class="opportunity-candidate-head"><div class="opportunity-rank">#${esc(item.rank)}</div><div><h5>${esc(opportunityCandidateName(candidate))}</h5><p>${esc(candidate.canonical_domain||candidate.source_url||"—")}</p></div>${selected?`<span class="state-badge status-online">SELECTED</span>`:""}</div><div class="opportunity-candidate-grid"><div><span>Score</span><strong>${esc(candidate.score??"—")}</strong></div><div><span>Confidence</span><strong>${esc(candidate.confidence??"—")}</strong></div><div><span>Verification</span><strong>${esc(candidate.verification_status||"—")}</strong></div><div><span>Disposition</span><strong>${esc(candidate.disposition||"—")}</strong></div><div><span>Network</span><strong>${esc(candidate.affiliate_network||"—")}</strong></div><div><span>Evidence count</span><strong>${esc(item.evidence_count??0)}</strong></div></div><div class="opportunity-candidate-actions"><button class="secondary compact" type="button" data-action="opportunity-evidence" data-candidate-id="${esc(candidate.id)}">${evidenceStatus==="success"?"Refresh evidence":"View evidence"}</button></div>${opportunityEvidenceBlock(candidate.id)}</article>`;}).join("")}</div>`:`<div class="empty">The ranking API is live and returned no ranked candidates for this run.</div>`}</section><section class="opportunity-subsection"><div class="approval-subhead"><strong>Candidate Ledger</strong><span>${candidates.length} candidates</span></div>${candidates.length?`<div class="table-wrap"><table class="data-table opportunity-ledger"><thead><tr><th>Candidate</th><th>Domain</th><th>Network</th><th>Score</th><th>Confidence</th><th>Verification</th><th>Disposition</th></tr></thead><tbody>${candidates.map(candidate=>`<tr><td>${esc(opportunityCandidateName(candidate))}</td><td>${esc(candidate.canonical_domain||"—")}</td><td>${esc(candidate.affiliate_network||"—")}</td><td>${esc(candidate.score??"—")}</td><td>${esc(candidate.confidence??"—")}</td><td>${esc(candidate.verification_status||"—")}</td><td>${esc(candidate.disposition||"—")}</td></tr>`).join("")}</tbody></table></div>`:`<div class="empty">The candidate ledger is live and currently empty for this run.</div>`}</section></div>`;
+}
+function opportunities(){
+  const surface=state.opportunities;
+  const runs=surface.runs||[];
+  const totalCandidates=runs.reduce((sum,run)=>sum+Number(run.candidate_count||0),0);
+  const totalVerified=runs.reduce((sum,run)=>sum+Number(run.verified_count||0),0);
+  const totalSelected=runs.reduce((sum,run)=>sum+Number(run.selected_count||0),0);
+  return `<div class="section-stack"><div class="hero"><div><h3>Opportunities</h3><p>Read-only visibility into durable discovery runs, candidate evidence, frozen ranking, and selected opportunities. UIF5B does not create, execute, launch, or retry discovery runs.</p></div><span class="live-badge">${state.backendOnline&&surface.status==="success"?"● DISCOVERY LEDGER LIVE":"● DISCOVERY INDEX UNAVAILABLE"}</span></div><div class="grid operations-kpi-grid">${kpi("Recent Runs",runs.length,"Latest up to 50 durable runs")}${kpi("Candidates",totalCandidates,"Counters across loaded runs")}${kpi("Verified",totalVerified,"Counters across loaded runs")}${kpi("Selected",totalSelected,"Counters across loaded runs")}</div>${surface.status==="error"?`<div class="operations-error">${esc(surface.error||"Discovery run index API unavailable.")}</div>`:""}<div class="opportunity-layout"><section class="card opportunity-run-card"><div class="card-head"><div><h4>Recent Discovery Runs</h4><p>Newest durable run first</p></div><span class="state-badge">${runs.length} loaded</span></div><div class="card-body">${runs.length?`<div class="opportunity-run-list">${runs.map(run=>`<button class="opportunity-run-row ${surface.selectedRunId===run.id?"active":""}" type="button" data-action="opportunity-run" data-run-id="${esc(run.id)}"><div><strong>${esc(run.input_value)}</strong><span>${esc(run.input_type)} · ${esc(dateTime(run.created_at))}</span></div><div><span class="status-pill ${operationStatusClass(run.status)}">${esc(run.status||"UNKNOWN")}</span><small>${esc(run.candidate_count)} candidates · ${esc(run.selected_count)} selected</small></div></button>`).join("")}</div>`:`<div class="empty">${surface.status==="success"?"The discovery run index is live and currently empty.":"No discovery run data is available."}</div>`}</div></section><section class="card opportunity-detail-card"><div class="card-head"><div><h4>Opportunity Intelligence</h4><p>Candidate → evidence → ranking → selection</p></div><span class="state-badge">READ ONLY</span></div><div class="card-body">${opportunityRunDetail()}</div></section></div><div class="authority-wall"><strong>Visibility only.</strong> UIF5B reads the durable discovery ledger and existing ranking/evidence outputs. It exposes no run creation, execution, mission launch, retry, publishing, outreach, allocation, or economic decision authority.</div></div>`;
+}
+async function loadOpportunityRun(runId){
+  if(!runId)return;
+  const surface=state.opportunities;
+  surface.selectedRunId=runId;surface.detailStatus="loading";surface.candidates=[];surface.ranking=[];surface.selected=[];surface.evidence={};surface.evidenceStatus={};render();
+  const [candidatesData,rankingData,selectedData]=await Promise.all([api(`/discovery/runs/${encodeURIComponent(runId)}/candidates`),api(`/discovery/runs/${encodeURIComponent(runId)}/ranking`),api(`/discovery/runs/${encodeURIComponent(runId)}/selected`)]);
+  if(!candidatesData||!rankingData||!selectedData){surface.detailStatus="error";render();return}
+  surface.candidates=Array.isArray(candidatesData)?candidatesData:[];surface.ranking=Array.isArray(rankingData?.items)?rankingData.items:[];surface.selected=Array.isArray(selectedData?.candidates)?selectedData.candidates:[];surface.detailStatus="success";render();
+}
+async function loadOpportunityEvidence(candidateId){
+  if(!candidateId)return;
+  const surface=state.opportunities;surface.evidenceStatus[candidateId]="loading";render();
+  const data=await api(`/discovery/candidates/${encodeURIComponent(candidateId)}/evidence`);
+  if(!data){surface.evidenceStatus[candidateId]="error";render();return}
+  surface.evidence[candidateId]=Array.isArray(data)?data:[];surface.evidenceStatus[candidateId]="success";render();
+}
+
 /* UIF5A — Existing Operations Visibility */
 function operationStatusClass(status){
   const value=String(status||"").toLowerCase();
@@ -1044,7 +1120,7 @@ async function projectApprovalDecision(){
   }
 }
 
-const renderers={overview,offers,opportunities:()=>pending("Opportunities","Opportunity intelligence and scoring views."),audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:()=>pending("Content Assets","Research briefs, generated content, evaluations and repurposed assets."),distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
+const renderers={overview,offers,opportunities,audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:()=>pending("Content Assets","Research briefs, generated content, evaluations and repurposed assets."),distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
 
 function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
 function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}
@@ -1055,6 +1131,8 @@ function bindActions(){
     if(a==="activity")activate("activity");
     if(a==="product-discovery")await postCommand("/system/command/run-product-discovery","Product discovery");
     if(a==="affiliate-discovery")await postCommand("/system/command/run-affiliate","Affiliate discovery");
+    if(a==="opportunity-run")await loadOpportunityRun(b.dataset.runId);
+    if(a==="opportunity-evidence")await loadOpportunityEvidence(b.dataset.candidateId);
     if(a==="go-recommendations")activate("recommendations");
     if(a==="go-approvals")activate("approvals");
     if(a==="go-experiments")activate("experiments");

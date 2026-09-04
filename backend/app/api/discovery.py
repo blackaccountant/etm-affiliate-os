@@ -1,6 +1,6 @@
 """Read and command API for durable discovery runs."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import ValidationError
 
 from app.dependencies import get_discovery_mission_manager, get_discovery_query_service, get_discovery_run_orchestration_service, get_discovery_run_repository
@@ -14,6 +14,15 @@ from app.services.discovery_run_orchestration_service import DiscoveryRunOrchest
 
 
 router = APIRouter()
+
+
+@router.get("/runs", response_model=list[DiscoveryRunResponse])
+def list_runs(
+    limit: int = Query(default=50, ge=1, le=100),
+    service: DiscoveryQueryService = Depends(get_discovery_query_service),
+):
+    """Return the most recent durable discovery runs without mutating them."""
+    return service.list_runs(limit)
 
 
 def _run_or_404(service: DiscoveryQueryService, run_id: str):
