@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.dependencies import (
@@ -15,14 +15,19 @@ from app.dependencies import (
     get_generated_content_artifact_repository,
 )
 from app.mission.manager import MissionManager
+from app.repositories.content_brief_repository import ContentBriefRepository
+from app.repositories.content_evaluation_repository import ContentEvaluationRepository
 from app.repositories.content_generation_run_repository import ContentGenerationRunRepository
 from app.repositories.content_repurposing_run_repository import ContentRepurposingRunRepository
 from app.repositories.generated_content_artifact_repository import GeneratedContentArtifactRepository
 from app.repositories.mission_repository import MissionRepository
 from app.schemas.content import (
+    ContentBriefResponse,
+    ContentEvaluationResponse,
     ContentGenerationRunResponse,
     ContentMissionLaunchResponse,
     ContentMissionResponse,
+    ContentOperationsSnapshotResponse,
     ContentRepurposingRunResponse,
     GeneratedContentArtifactResponse,
 )
@@ -86,6 +91,22 @@ def _launch_error(error: Exception) -> HTTPException | None:
     if isinstance(error, RuntimeError) and "already" in message:
         return HTTPException(status_code=409, detail="content run is not available for a fresh launch")
     return None
+
+
+# UIF5C — read-only operator content visibility.
+@router.get("/operations", response_model=ContentOperationsSnapshotResponse)
+def get_content_operations(
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Return recent durable content records without launching or mutating work."""
+    return ContentOperationsSnapshotResponse(
+        briefs=[ContentBriefResponse.model_validate(item) for item in ContentBriefRepository(db).list_recent(limit)],
+        generation_runs=[ContentGenerationRunResponse.model_validate(item) for item in ContentGenerationRunRepository(db).list_recent(limit)],
+        artifacts=[GeneratedContentArtifactResponse.model_validate(item) for item in GeneratedContentArtifactRepository(db).list_recent(limit)],
+        evaluations=[ContentEvaluationResponse.model_validate(item) for item in ContentEvaluationRepository(db).list_recent(limit)],
+        repurposing_runs=[ContentRepurposingRunResponse.model_validate(item) for item in ContentRepurposingRunRepository(db).list_recent(limit)],
+    )
 
 
 @router.post("/generation-runs/{content_generation_run_id}/launch", response_model=ContentMissionLaunchResponse)

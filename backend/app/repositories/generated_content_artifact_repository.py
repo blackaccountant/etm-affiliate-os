@@ -15,3 +15,15 @@ class GeneratedContentArtifactRepository:
         return self.db.query(GeneratedContentArtifact).filter_by(generation_run_id=run_id).first()
     def list_by_content_brief_id(self, brief_id: str):
         return self.db.query(GeneratedContentArtifact).filter_by(content_brief_id=brief_id).order_by(GeneratedContentArtifact.created_at.asc()).all()
+
+    def list_recent(self, limit: int = 50) -> list[GeneratedContentArtifact]:
+        """Return newest durable records first; this query performs no writes."""
+        return (
+            self.db.query(GeneratedContentArtifact)
+            .order_by(
+                GeneratedContentArtifact.created_at.desc(),
+                GeneratedContentArtifact.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )

@@ -64,3 +64,15 @@ class ContentGenerationRunRepository:
         if claimed.rowcount != 1:
             return None
         return self.get_by_id(run_id)
+
+    def list_recent(self, limit: int = 50) -> list[ContentGenerationRun]:
+        """Return newest durable records first; this query performs no writes."""
+        return (
+            self.db.query(ContentGenerationRun)
+            .order_by(
+                ContentGenerationRun.created_at.desc(),
+                ContentGenerationRun.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )

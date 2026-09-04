@@ -59,3 +59,15 @@ class ContentBriefRepository:
 
     def list_by_run(self, run_id: str) -> list[ContentBrief]:
         return self.db.query(ContentBrief).filter(ContentBrief.discovery_run_id == run_id).order_by(ContentBrief.created_at.asc()).all()
+
+    def list_recent(self, limit: int = 50) -> list[ContentBrief]:
+        """Return newest durable records first; this query performs no writes."""
+        return (
+            self.db.query(ContentBrief)
+            .order_by(
+                ContentBrief.created_at.desc(),
+                ContentBrief.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )

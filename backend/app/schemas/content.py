@@ -88,3 +88,60 @@ class GeneratedContentArtifactResponse(_Response):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class ContentBriefResponse(_Response):
+    id: str
+    discovery_run_id: str
+    discovery_candidate_id: str
+    content_type: str
+    channel_intent: str
+    objective: str
+    audience_intent: str | None
+    audience_problem: str | None
+    angle: str | None
+    call_to_action: str | None
+    tone: str | None
+    required_disclosure: str | None
+    key_benefits: Any | None
+    proof_points: Any | None
+    target_keywords: Any | None
+    constraints: Any | None
+    idempotency_key: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContentEvaluationResponse(_Response):
+    id: str
+    artifact_id: str
+    content_brief_id: str
+    generation_run_id: str
+    factual_grounding_score: int
+    offer_alignment_score: int
+    intent_alignment_score: int
+    clarity_score: int
+    cta_score: int
+    compliance_score: int
+    overall_score: int
+    decision: str
+    approved: bool
+    evaluator_version: str
+    policy_version: str
+    claim_results: Any
+    compliance_flags: Any
+    unsupported_claims: Any
+    missing_evidence_ids: Any
+    revision_reasons: Any
+    rejection_reasons: Any
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContentOperationsSnapshotResponse(BaseModel):
+    briefs: list[ContentBriefResponse]
+    generation_runs: list[ContentGenerationRunResponse]
+    artifacts: list[GeneratedContentArtifactResponse]
+    evaluations: list[ContentEvaluationResponse]
+    repurposing_runs: list[ContentRepurposingRunResponse]

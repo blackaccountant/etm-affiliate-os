@@ -6,3 +6,15 @@ class ContentEvaluationRepository:
     def get_by_id(self, value): return self.db.get(ContentEvaluation, value)
     def get_by_artifact_id(self, value): return self.db.query(ContentEvaluation).filter_by(artifact_id=value).order_by(ContentEvaluation.created_at.asc()).all()
     def get_by_identity(self, artifact_id, evaluator_version, policy_version): return self.db.query(ContentEvaluation).filter_by(artifact_id=artifact_id, evaluator_version=evaluator_version, policy_version=policy_version).first()
+
+    def list_recent(self, limit: int = 50) -> list[ContentEvaluation]:
+        """Return newest durable records first; this query performs no writes."""
+        return (
+            self.db.query(ContentEvaluation)
+            .order_by(
+                ContentEvaluation.created_at.desc(),
+                ContentEvaluation.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )

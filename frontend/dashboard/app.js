@@ -18,6 +18,7 @@ const state={
     evidence:{},
     evidenceStatus:{}
   },
+  contentOps:{status:"idle",briefs:[],generationRuns:[],artifacts:[],evaluations:[],repurposingRuns:[],error:null},
   distribution:{status:"idle",queue:[],error:null},
   commissions:{
     earningsStatus:"idle",
@@ -74,6 +75,7 @@ async function refreshData({silent=false}={}){
     eventsData,
     productsData,
     discoveryRunsData,
+    contentOperationsData,
     publishingQueueData,
     earningsData,
     payoutsData
@@ -84,6 +86,7 @@ async function refreshData({silent=false}={}){
     api("/system/events"),
     api("/products/"),
     api("/discovery/runs?limit=50"),
+    api("/content/operations?limit=50"),
     api("/publisher/queue"),
     api("/affiliate-earnings/?limit=100"),
     api("/affiliate-payouts/?limit=100")
@@ -100,6 +103,16 @@ async function refreshData({silent=false}={}){
     status:discoveryRunsData?"success":"error",
     runs:Array.isArray(discoveryRunsData)?discoveryRunsData:[],
     error:discoveryRunsData?null:"Discovery run index API unavailable."
+  };
+
+  state.contentOps={
+    status:contentOperationsData?"success":"error",
+    briefs:Array.isArray(contentOperationsData?.briefs)?contentOperationsData.briefs:[],
+    generationRuns:Array.isArray(contentOperationsData?.generation_runs)?contentOperationsData.generation_runs:[],
+    artifacts:Array.isArray(contentOperationsData?.artifacts)?contentOperationsData.artifacts:[],
+    evaluations:Array.isArray(contentOperationsData?.evaluations)?contentOperationsData.evaluations:[],
+    repurposingRuns:Array.isArray(contentOperationsData?.repurposing_runs)?contentOperationsData.repurposing_runs:[],
+    error:contentOperationsData?null:"Content operations API unavailable."
   };
 
   state.distribution={
@@ -774,6 +787,23 @@ async function loadOpportunityEvidence(candidateId){
   surface.evidence[candidateId]=Array.isArray(data)?data:[];surface.evidenceStatus[candidateId]="success";render();
 }
 
+
+/* UIF5C — Read-Only Content Operations Visibility */
+function contentText(value,max=92){const text=String(value??"");return text.length>max?`${text.slice(0,max-1)}…`:text}
+function contentOperations(){
+  const s=state.contentOps,b=s.briefs||[],g=s.generationRuns||[],a=s.artifacts||[],e=s.evaluations||[],r=s.repurposingRuns||[];
+  const table=(title,copy,count,headers,rows,empty)=>`<section class="card"><div class="card-head"><div><h4>${esc(title)}</h4><p>${esc(copy)}</p></div><span class="state-badge">${count} loaded</span></div><div class="card-body table-wrap">${count?`<table class="data-table content-table"><thead><tr>${headers.map(x=>`<th>${esc(x)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`:`<div class="empty">${esc(empty)}</div>`}</div></section>`;
+  return `<div class="section-stack"><div class="hero"><div><h3>Content Assets</h3><p>Read-only visibility into durable research briefs, generation runs, generated assets, evaluations, and repurposing lineage. UIF5C does not generate, evaluate, repurpose, publish, schedule, or dispatch content.</p></div><span class="live-badge">${state.backendOnline&&s.status==="success"?"● CONTENT LEDGER LIVE":"● CONTENT LEDGER UNAVAILABLE"}</span></div>
+  <div class="grid content-kpi-grid">${kpi("Research Briefs",b.length,"Latest up to 50 durable briefs")}${kpi("Generation Runs",g.length,"Latest up to 50 attempts")}${kpi("Generated Assets",a.length,"Durable generated artifacts")}${kpi("Evaluations",e.length,"Recorded evaluation decisions")}${kpi("Repurpose Runs",r.length,"Recorded repurposing lineage")}</div>
+  ${s.status==="error"?`<div class="operations-error">${esc(s.error||"Content operations API unavailable.")}</div>`:""}
+  ${table("Research Briefs","Upstream content instructions grounded in discovery candidates",b.length,["Brief","Type","Channel","Objective","Status","Candidate","Created"],b.map(x=>`<tr><td class="operations-reference">${esc(x.id||"—")}</td><td>${esc(x.content_type||"—")}</td><td>${esc(x.channel_intent||"—")}</td><td class="content-copy-cell">${esc(contentText(x.objective))}</td><td><span class="status-pill ${operationStatusClass(x.status)}">${esc(x.status||"UNKNOWN")}</span></td><td class="operations-reference">${esc(x.discovery_candidate_id||"—")}</td><td>${esc(dateTime(x.created_at))}</td></tr>`).join(""),s.status==="success"?"The content ledger is live and currently contains no research briefs.":"No content brief data is available.")}
+  ${table("Generation Runs","Durable generation attempts; visibility only",g.length,["Run","Brief","Provider","Model","Prompt","Status","Attempts","Updated"],g.map(x=>`<tr><td class="operations-reference">${esc(x.id||"—")}</td><td class="operations-reference">${esc(x.content_brief_id||"—")}</td><td>${esc(x.provider||"—")}</td><td>${esc(x.model||"—")}</td><td>${esc(x.prompt_version||"—")}</td><td><span class="status-pill ${operationStatusClass(x.status)}">${esc(x.status||"UNKNOWN")}</span></td><td>${esc(x.attempt_count??0)}</td><td>${esc(dateTime(x.updated_at))}</td></tr>`).join(""),s.status==="success"?"No durable content generation runs have been recorded.":"No generation-run data is available.")}
+  ${table("Generated Assets","Generated content already persisted by the backend",a.length,["Artifact","Title","Type","Status","Brief","Generation Run","Created"],a.map(x=>`<tr><td class="operations-reference">${esc(x.id||"—")}</td><td class="content-copy-cell">${esc(contentText(x.title,72)||"—")}</td><td>${esc(x.content_type||"—")}</td><td><span class="status-pill ${operationStatusClass(x.status)}">${esc(x.status||"UNKNOWN")}</span></td><td class="operations-reference">${esc(x.content_brief_id||"—")}</td><td class="operations-reference">${esc(x.generation_run_id||"—")}</td><td>${esc(dateTime(x.created_at))}</td></tr>`).join(""),s.status==="success"?"No generated content artifacts are currently recorded.":"No generated-asset data is available.")}
+  ${table("Content Evaluations","Recorded quality and compliance decisions; no decision is made in the UI",e.length,["Evaluation","Artifact","Overall","Decision","Approved","Policy","Evaluator","Created"],e.map(x=>`<tr><td class="operations-reference">${esc(x.id||"—")}</td><td class="operations-reference">${esc(x.artifact_id||"—")}</td><td>${esc(x.overall_score??"—")}</td><td><span class="status-pill ${operationStatusClass(x.decision)}">${esc(x.decision||"UNKNOWN")}</span></td><td>${x.approved===true?"Yes":x.approved===false?"No":"—"}</td><td>${esc(x.policy_version||"—")}</td><td>${esc(x.evaluator_version||"—")}</td><td>${esc(dateTime(x.created_at))}</td></tr>`).join(""),s.status==="success"?"No content evaluations are currently recorded.":"No evaluation data is available.")}
+  ${table("Repurposing Runs","Source-to-result lineage for repurposed content",r.length,["Run","Source Artifact","Source Evaluation","Target Type","Channel","Status","Result Artifact","Updated"],r.map(x=>`<tr><td class="operations-reference">${esc(x.id||"—")}</td><td class="operations-reference">${esc(x.source_artifact_id||"—")}</td><td class="operations-reference">${esc(x.source_evaluation_id||"—")}</td><td>${esc(x.target_content_type||"—")}</td><td>${esc(x.channel_intent||"—")}</td><td><span class="status-pill ${operationStatusClass(x.status)}">${esc(x.status||"UNKNOWN")}</span></td><td class="operations-reference">${esc(x.result_artifact_id||"—")}</td><td>${esc(dateTime(x.updated_at))}</td></tr>`).join(""),s.status==="success"?"No content repurposing runs are currently recorded.":"No repurposing data is available.")}
+  <div class="authority-wall"><strong>Visibility only.</strong> UIF5C reads records already persisted by the content subsystem. It exposes no generation launch, evaluation decision, repurposing launch, publishing, scheduling, outreach, allocation, or execution authority.</div></div>`
+}
+
 /* UIF5A — Existing Operations Visibility */
 function operationStatusClass(status){
   const value=String(status||"").toLowerCase();
@@ -1120,7 +1150,7 @@ async function projectApprovalDecision(){
   }
 }
 
-const renderers={overview,offers,opportunities,audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:()=>pending("Content Assets","Research briefs, generated content, evaluations and repurposed assets."),distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
+const renderers={overview,offers,opportunities,audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:contentOperations,distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
 
 function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
 function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}

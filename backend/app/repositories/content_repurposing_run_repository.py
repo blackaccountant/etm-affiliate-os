@@ -27,3 +27,15 @@ class ContentRepurposingRunRepository:
     def set_result(self, row: ContentRepurposingRun, artifact_id: str) -> ContentRepurposingRun:
         row.result_artifact_id = artifact_id
         return row
+
+    def list_recent(self, limit: int = 50) -> list[ContentRepurposingRun]:
+        """Return newest durable records first; this query performs no writes."""
+        return (
+            self.db.query(ContentRepurposingRun)
+            .order_by(
+                ContentRepurposingRun.created_at.desc(),
+                ContentRepurposingRun.id.desc(),
+            )
+            .limit(limit)
+            .all()
+        )
