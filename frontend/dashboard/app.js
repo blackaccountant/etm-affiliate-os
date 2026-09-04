@@ -19,6 +19,7 @@ const state={
     evidenceStatus:{}
   },
   audience:{status:"idle",profiles:[],signals:[],qualifications:[],segments:[],segmentRevisions:[],memberships:[],error:null},
+  attribution:{status:"idle",publications:[],contexts:[],clicks:[],facts:[],earningLinks:[],settlementLinks:[],error:null},
   contentOps:{status:"idle",briefs:[],generationRuns:[],artifacts:[],evaluations:[],repurposingRuns:[],error:null},
   distribution:{status:"idle",queue:[],error:null},
   commissions:{
@@ -78,6 +79,7 @@ async function refreshData({silent=false}={}){
     discoveryRunsData,
     contentOperationsData,
     audienceVisibilityData,
+    attributionLineageData,
     publishingQueueData,
     earningsData,
     payoutsData
@@ -90,6 +92,7 @@ async function refreshData({silent=false}={}){
     api("/discovery/runs?limit=50"),
     api("/content/operations?limit=50"),
     api("/audience/visibility?limit=50"),
+    api("/attribution/lineage?limit=50"),
     api("/publisher/queue"),
     api("/affiliate-earnings/?limit=100"),
     api("/affiliate-payouts/?limit=100")
@@ -117,6 +120,17 @@ async function refreshData({silent=false}={}){
     segmentRevisions:Array.isArray(audienceVisibilityData?.segment_revisions)?audienceVisibilityData.segment_revisions:[],
     memberships:Array.isArray(audienceVisibilityData?.memberships)?audienceVisibilityData.memberships:[],
     error:audienceVisibilityData?null:"Audience visibility API unavailable."
+  };
+
+  state.attribution={
+    status:attributionLineageData?"success":"error",
+    publications:Array.isArray(attributionLineageData?.publications)?attributionLineageData.publications:[],
+    contexts:Array.isArray(attributionLineageData?.contexts)?attributionLineageData.contexts:[],
+    clicks:Array.isArray(attributionLineageData?.clicks)?attributionLineageData.clicks:[],
+    facts:Array.isArray(attributionLineageData?.facts)?attributionLineageData.facts:[],
+    earningLinks:Array.isArray(attributionLineageData?.earning_links)?attributionLineageData.earning_links:[],
+    settlementLinks:Array.isArray(attributionLineageData?.settlement_links)?attributionLineageData.settlement_links:[],
+    error:attributionLineageData?null:"Attribution lineage API unavailable."
   };
 
   state.contentOps={
@@ -879,6 +893,96 @@ function contentOperations(){
   <div class="authority-wall"><strong>Visibility only.</strong> UIF5C reads records already persisted by the content subsystem. It exposes no generation launch, evaluation decision, repurposing launch, publishing, scheduling, outreach, allocation, or execution authority.</div></div>`
 }
 
+/* UIF5E — Read-Only Attribution Lineage Visibility */
+function attributionLineage(){
+  const s=state.attribution;
+  const publications=s.publications||[];
+  const contexts=s.contexts||[];
+  const clicks=s.clicks||[];
+  const facts=s.facts||[];
+  const earningLinks=s.earningLinks||[];
+  const settlements=s.settlementLinks||[];
+  const conversionFacts=facts.filter(row=>String(row.fact_kind||"").toUpperCase()==="CONVERSION_REPORTED").length;
+  const table=(title,copy,count,headers,rows,empty)=>`<section class="card"><div class="card-head"><div><h4>${esc(title)}</h4><p>${esc(copy)}</p></div><span class="state-badge">${count} loaded</span></div><div class="card-body table-wrap">${count?`<table class="data-table operations-table"><thead><tr>${headers.map(x=>`<th>${esc(x)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`:`<div class="empty">${esc(empty)}</div>`}</div></section>`;
+
+  return `<div class="section-stack">
+    <div class="hero">
+      <div>
+        <h3>Attribution</h3>
+        <p>Read-only durable reference lineage from publication → context/link/click → conversion fact → earning → payout settlement. UIF5E shows only explicit stored references and never infers attribution from timestamps, URLs, or presentation order.</p>
+      </div>
+      <span class="live-badge">${state.backendOnline&&s.status==="success"?"● ATTRIBUTION LINEAGE LIVE":"● ATTRIBUTION DATA UNAVAILABLE"}</span>
+    </div>
+
+    <div class="grid operations-kpi-grid">
+      ${kpi("Publications",publications.length,"Explicit publication authority bindings")}
+      ${kpi("Contexts",contexts.length,"Program + publication attribution contexts")}
+      ${kpi("Clicks",clicks.length,"Durable attributed click records")}
+      ${kpi("Conversion Facts",conversionFacts,"Loaded CONVERSION_REPORTED facts")}
+      ${kpi("Earning Links",earningLinks.length,"Explicit conversion → earning references")}
+      ${kpi("Settlements",settlements.length,"Explicit earning → payout settlement references")}
+    </div>
+
+    ${s.status==="error"?`<div class="operations-error">${esc(s.error||"Attribution lineage API unavailable.")}</div>`:""}
+
+    ${table(
+      "Attribution Publications",
+      "Explicit bindings to legacy publishing queue or durable distribution-run authority",
+      publications.length,
+      ["Publication","Publishing Queue","Distribution Run","Created"],
+      publications.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td>${esc(row.legacy_publishing_queue_id??"—")}</td><td class="operations-reference">${esc(row.distribution_run_id||"—")}</td><td>${esc(dateTime(row.created_at))}</td></tr>`).join(""),
+      s.status==="success"?"The attribution publication ledger is live and currently empty.":"No attribution publication data is available."
+    )}
+
+    ${table(
+      "Attribution Contexts",
+      "Durable program-to-publication contexts; no context is reconstructed in the UI",
+      contexts.length,
+      ["Context","Program","Publication","Created"],
+      contexts.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td>#${esc(row.affiliate_program_id??"—")}</td><td class="operations-reference">${esc(row.attribution_publication_id||"—")}</td><td>${esc(dateTime(row.created_at))}</td></tr>`).join(""),
+      s.status==="success"?"The attribution context ledger is live and currently empty.":"No attribution context data is available."
+    )}
+
+    ${table(
+      "Attributed Clicks",
+      "Recorded click references bound to an existing context and affiliate link",
+      clicks.length,
+      ["Click","Context","Affiliate Link","Source","Occurred","Recorded"],
+      clicks.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.attribution_context_id||"—")}</td><td>#${esc(row.affiliate_link_id??"—")}</td><td>${esc(row.source_namespace||"—")}</td><td>${esc(dateTime(row.occurred_at))}</td><td>${esc(dateTime(row.recorded_at))}</td></tr>`).join(""),
+      s.status==="success"?"The durable attributed-click ledger is live and currently empty.":"No attributed-click data is available."
+    )}
+
+    ${table(
+      "Immutable Attribution Facts",
+      "Append-only facts preserving publication, link, click, conversion and correction references",
+      facts.length,
+      ["Fact","Kind","Context","Click","Affiliate Link","Conversion","Supersedes","Occurred"],
+      facts.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td><span class="status-pill ${operationStatusClass(row.fact_kind)}">${esc(row.fact_kind||"UNKNOWN")}</span></td><td class="operations-reference">${esc(row.attribution_context_id||"—")}</td><td class="operations-reference">${esc(row.attribution_click_id||"—")}</td><td>${row.affiliate_link_id==null?"—":`#${esc(row.affiliate_link_id)}`}</td><td>${row.affiliate_conversion_id==null?"—":`#${esc(row.affiliate_conversion_id)}`}</td><td class="operations-reference">${esc(row.supersedes_fact_id||"—")}</td><td>${esc(dateTime(row.occurred_at))}</td></tr>`).join(""),
+      s.status==="success"?"The immutable attribution-fact ledger is live and currently empty.":"No attribution facts are available."
+    )}
+
+    ${table(
+      "Conversion → Earning Links",
+      "Immutable references from a conversion fact to its durable affiliate earning",
+      earningLinks.length,
+      ["Earning Link","Fact","Conversion","Earning","Source","Observed","Recorded"],
+      earningLinks.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.attribution_fact_id||"—")}</td><td>#${esc(row.affiliate_conversion_id??"—")}</td><td>#${esc(row.affiliate_earning_id??"—")}</td><td>${esc(row.source_namespace||"—")}</td><td>${esc(dateTime(row.observed_at))}</td><td>${esc(dateTime(row.recorded_at))}</td></tr>`).join(""),
+      s.status==="success"?"No durable conversion-to-earning attribution links are currently recorded.":"No earning-link data is available."
+    )}
+
+    ${table(
+      "Earning → Payout Settlement Links",
+      "Observed successful settlement lineage through explicit earning, payout and payout-attempt references",
+      settlements.length,
+      ["Settlement","Earning Link","Earning","Payout","Attempt","Source","Observed"],
+      settlements.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.attribution_earning_link_id||"—")}</td><td>#${esc(row.affiliate_earning_id??"—")}</td><td>#${esc(row.affiliate_payout_id??"—")}</td><td>#${esc(row.affiliate_payout_attempt_id??"—")}</td><td>${esc(row.source_namespace||"—")}</td><td>${esc(dateTime(row.observed_at))}</td></tr>`).join(""),
+      s.status==="success"?"No durable earning-to-payout settlement links are currently recorded.":"No settlement-link data is available."
+    )}
+
+    <div class="authority-wall"><strong>Visibility only.</strong> UIF5E reads immutable attribution references already persisted by M10. It does not infer joins from timestamps or URLs, mutate or correct facts, reattribute conversions, mark earnings paid, process payouts, calculate profit, allocate budget, or execute anything.</div>
+  </div>`;
+}
+
 /* UIF5A — Existing Operations Visibility */
 function operationStatusClass(status){
   const value=String(status||"").toLowerCase();
@@ -1225,7 +1329,7 @@ async function projectApprovalDecision(){
   }
 }
 
-const renderers={overview,offers,opportunities,audience:audienceIntelligence,content:contentOperations,distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
+const renderers={overview,offers,opportunities,audience:audienceIntelligence,content:contentOperations,distribution,attribution:attributionLineage,commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
 
 function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
 function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}

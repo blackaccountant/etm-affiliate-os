@@ -30,6 +30,7 @@ from app.api.affiliate_payouts import router as affiliate_payouts_router
 from app.api.discovery import router as discovery_router
 from app.api.content import router as content_router
 from app.api.audience_visibility_routes import router as audience_visibility_router
+from app.api.attribution_lineage_routes import router as attribution_lineage_router
 from app.api.optimization_recommendation_routes import (
     router as optimization_recommendation_router,
 )
@@ -318,6 +319,11 @@ app.include_router(
 
 app.include_router(
     audience_visibility_router,
+)
+
+
+app.include_router(
+    attribution_lineage_router,
 )
 
 
