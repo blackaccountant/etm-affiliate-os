@@ -32,6 +32,9 @@ from app.api.content import router as content_router
 from app.api.optimization_recommendation_routes import (
     router as optimization_recommendation_router,
 )
+from app.api.optimization_approval_routes import (
+    router as optimization_approval_router,
+)
 
 
 # -----------------------------------------------------
@@ -311,4 +314,9 @@ app.include_router(
 
 app.include_router(
     optimization_recommendation_router,
+)
+
+
+app.include_router(
+    optimization_approval_router,
 )
