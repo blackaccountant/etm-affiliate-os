@@ -1,223 +1,65 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
-    <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>ETM Affiliate OS</title>
-
-    <link
-        rel="stylesheet"
-        href="styles.css"
-    >
-
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ETM Affiliate OS — Operator Console</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
-
-
 <body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">ETM</div>
+        <div><h1>Affiliate OS</h1><p>Operator Console</p></div>
+      </div>
 
-    <header class="topbar">
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview"><span>⌂</span>Overview</button>
+        <p class="nav-label">Intelligence</p>
+        <button class="nav-item" data-view="offers"><span>◎</span>Products & Offers</button>
+        <button class="nav-item" data-view="opportunities"><span>◇</span>Opportunities</button>
+        <button class="nav-item" data-view="audience"><span>◉</span>Audience</button>
+        <p class="nav-label">Content</p>
+        <button class="nav-item" data-view="content"><span>✦</span>Content Assets</button>
+        <button class="nav-item" data-view="distribution"><span>↗</span>Distribution</button>
+        <p class="nav-label">Revenue</p>
+        <button class="nav-item" data-view="attribution"><span>⌁</span>Attribution</button>
+        <button class="nav-item" data-view="commissions"><span>$</span>Commissions & Payouts</button>
+        <p class="nav-label">Optimization</p>
+        <button class="nav-item" data-view="performance"><span>△</span>Economic Performance</button>
+        <button class="nav-item" data-view="recommendations"><span>★</span>Recommendations</button>
+        <button class="nav-item" data-view="approvals"><span>✓</span>Approval Queue</button>
+        <button class="nav-item" data-view="experiments"><span>⚗</span>Experiments</button>
+        <p class="nav-label">System</p>
+        <button class="nav-item" data-view="agents"><span>◌</span>AI Agents</button>
+        <button class="nav-item" data-view="activity"><span>≋</span>Activity</button>
+      </nav>
 
-        <div>
-
-            <h1>
-                ETM Affiliate OS
-            </h1>
-
-            <p>
-                AI Workforce Mission Control
-            </p>
-
+      <div class="sidebar-footer">
+        <div class="backend-chip">
+          <span class="dot" id="sidebar-dot"></span>
+          <div><strong id="sidebar-status">Checking backend…</strong><small id="sidebar-version">FastAPI</small></div>
         </div>
+      </div>
+    </aside>
 
-
-        <div class="system-status">
-
-            <span id="system-status">
-                🟢 ONLINE
-            </span>
-
+    <main class="main">
+      <header class="topbar">
+        <div class="title-wrap">
+          <button class="menu-button" id="menu-button">☰</button>
+          <div><p class="eyebrow">ETM AFFILIATE OS</p><h2 id="page-title">Overview</h2></div>
         </div>
-
-    </header>
-
-
-    <main>
-
-        <!-- ========================================= -->
-        <!-- SYSTEM STATS -->
-        <!-- ========================================= -->
-
-        <section class="stats">
-
-            <div class="card stat-card">
-
-                <h3>
-                    Revenue Today
-                </h3>
-
-                <h2 id="revenue-today">
-                    $0.00
-                </h2>
-
-            </div>
-
-
-            <div class="card stat-card">
-
-                <h3>
-                    Workers
-                </h3>
-
-                <h2 id="worker-count">
-                    0
-                </h2>
-
-            </div>
-
-
-            <div class="card stat-card">
-
-                <h3>
-                    Running Missions
-                </h3>
-
-                <h2 id="mission-count">
-                    0
-                </h2>
-
-            </div>
-
-
-            <div class="card stat-card">
-
-                <h3>
-                    Success Rate
-                </h3>
-
-                <h2 id="success-rate">
-                    100%
-                </h2>
-
-            </div>
-
-        </section>
-
-
-
-        <!-- ========================================= -->
-        <!-- WORKFORCE + ACTIVE MISSION -->
-        <!-- ========================================= -->
-
-        <section class="dashboard-grid">
-
-
-            <div class="card">
-
-                <h2>
-                    AI Workforce
-                </h2>
-
-                <div id="workers">
-
-                    Loading...
-
-                </div>
-
-            </div>
-
-
-
-            <div class="card">
-
-                <h2>
-                    Active Mission
-                </h2>
-
-                <div id="active-mission">
-
-                    No active mission.
-
-                </div>
-
-
-                <div class="mission-actions">
-
-                    <button
-                        id="run-product-discovery"
-                    >
-
-                        ▶ Launch Product Discovery
-
-                    </button>
-
-
-                    <button
-                        id="run-affiliate"
-                    >
-
-                        ▶ Launch Affiliate Discovery
-
-                    </button>
-
-                </div>
-
-            </div>
-
-
-
-            <!-- ===================================== -->
-            <!-- LATEST RESULTS -->
-            <!-- ===================================== -->
-
-            <div class="card latest-results-card">
-
-                <h2>
-                    Latest Results
-                </h2>
-
-                <div id="latest-results">
-
-                    No results yet.
-
-                </div>
-
-            </div>
-
-
-
-            <!-- ===================================== -->
-            <!-- LIVE EVENTS -->
-            <!-- ===================================== -->
-
-            <div class="card">
-
-                <h2>
-                    Live Events
-                </h2>
-
-                <div id="events">
-
-                    Waiting...
-
-                </div>
-
-            </div>
-
-
-        </section>
-
+        <div class="top-actions">
+          <div class="connection-pill"><span class="dot" id="top-dot"></span><span id="connection-text">Connecting</span></div>
+          <button class="icon-button" id="refresh-button" title="Refresh">↻</button>
+        </div>
+      </header>
+
+      <section class="content" id="view-container"></section>
     </main>
-
-
-    <script src="app.js"></script>
-
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
 </body>
-
 </html>
