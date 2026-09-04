@@ -12,6 +12,7 @@ const state={
     status:"idle",
     outcome:null,
     error:null,
+    request:null,
     form:{
       decisionState:"",
       selected:[],
@@ -19,6 +20,16 @@ const state={
       decisionReference:"",
       decidedAt:"",
       policyVersion:""
+    }
+  },
+  experiments:{
+    status:"idle",
+    rows:[],
+    error:null,
+    form:{
+      policyVersion:"",
+      selected:[],
+      designs:{}
     }
   }
 };
@@ -40,7 +51,7 @@ async function refreshData({silent=false}={}){
   const [health,dashboard,workersData,eventsData,productsData]=await Promise.all([api("/health"),api("/system/dashboard"),api("/system/workers"),api("/system/events"),api("/products/")]);
   state.health=health;state.dashboard=dashboard;state.workers=Array.isArray(workersData)?workersData:[];state.events=Array.isArray(eventsData)?eventsData:[];state.products=normalizeProducts(productsData);
   setBackendStatus(Boolean(health?.success));document.getElementById("sidebar-version").textContent=health?.success?"FastAPI connected":"127.0.0.1:8000";
-  if(!["recommendations","approvals"].includes(state.activeView))render();
+  if(!["recommendations","approvals","experiments"].includes(state.activeView))render();
   if(!silent)toast(health?.success?"Live data refreshed.":"Backend is not reachable.");
 }
 function kpi(label,value,meta){return `<div class="card kpi"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div><div class="meta">${esc(meta)}</div></div>`}
@@ -52,7 +63,7 @@ function overview(){const d=state.dashboard||{};const wc=state.workers.length||N
 <div class="grid two-col"><section class="card"><div class="card-head"><div><h4>AI Workforce</h4><p>Registered operational workers</p></div><span class="state-badge">${wc} registered</span></div><div class="card-body">${workers()}</div></section>
 <section class="card"><div class="card-head"><div><h4>Optimization Pipeline</h4><p>Frozen through M11A10</p></div><span class="state-badge">DESIGN ONLY</span></div><div class="card-body"><div class="pipeline"><span class="stage frozen">Economic truth</span><span>→</span><span class="stage frozen">Preference</span><span>→</span><span class="stage frozen">Recommendation</span><span>→</span><span class="stage frozen">Approval</span><span>→</span><span class="stage frozen">Experiment design</span></div><div class="callout" style="margin-top:14px">M11A10 can describe an experiment, but cannot allocate money, assign traffic, schedule execution, or launch anything.</div></div></section>
 <section class="card"><div class="card-head"><div><h4>Recent Activity</h4><p>Live system events</p></div><button class="secondary" data-action="activity">View all</button></div><div class="card-body">${events()}</div></section>
-<section class="card"><div class="card-head"><div><h4>Operator Attention</h4><p>Human-visible boundaries</p></div></div><div class="card-body"><div class="mini-list"><div class="mini-row"><span>Recommendation API surface</span><span class="state-badge status-online">LIVE</span></div><div class="mini-row"><span>Approval API surface</span><span class="state-badge status-online">LIVE</span></div><div class="mini-row"><span>Experiment design API surface</span><span class="state-badge">Pending</span></div></div></div></section></div>`}
+<section class="card"><div class="card-head"><div><h4>Operator Attention</h4><p>Human-visible boundaries</p></div></div><div class="card-body"><div class="mini-list"><div class="mini-row"><span>Recommendation API surface</span><span class="state-badge status-online">LIVE</span></div><div class="mini-row"><span>Approval API surface</span><span class="state-badge status-online">LIVE</span></div><div class="mini-row"><span>Experiment design API surface</span><span class="state-badge status-online">LIVE</span></div></div></div></section></div>`}
 function offers(){const p=state.products;return `<div class="section-stack"><div><h3 class="section-title">Products & Offers</h3><p class="section-copy">Live products from the existing FastAPI products endpoint.</p></div><section class="card"><div class="card-body table-wrap">${p.length?`<table class="data-table"><thead><tr><th>Name</th><th>Category</th><th>Program</th><th>Score</th><th>Status</th></tr></thead><tbody>${p.map(x=>`<tr><td>${esc(x.name||"—")}</td><td>${esc(x.category||"—")}</td><td>${esc(x.affiliate_program||x.affiliate_network||"—")}</td><td>${esc(x.affiliate_score??x.opportunity_score??"—")}</td><td>${esc(x.status||"—")}</td></tr>`).join("")}</tbody></table>`:`<div class="empty">No products returned. The screen is wired and ready for live product records.</div>`}</div></section></div>`}
 function pending(title,copy,frozen=false){return `<div class="section-stack"><div><h3 class="section-title">${esc(title)}</h3><p class="section-copy">${esc(copy)}</p></div><section class="card"><div class="card-body"><div class="callout">${frozen?"Backend service is frozen and qualified, but this UI intentionally waits for a dedicated API surface before showing operational controls.":"UI shell is ready. This capability will be wired when its backend read model/API is exposed."}</div></div></section></div>`}
 function approvalCandidateRows(){
@@ -141,6 +152,7 @@ function approvalOutcome(){
       </dl>
     </details>
 
+    <div class="toolbar"><button class="primary" data-action="go-experiments">Open Experiment Design</button></div>
     <div class="authority-wall"><strong>Authority stops here.</strong> This projected approval outcome does not allocate budget, assign traffic, create an experiment, launch content, dispatch outreach, or execute any operation.</div>
   </div>`;
 }
@@ -220,13 +232,425 @@ function approvals(){
       </section>
 
       <section class="card approval-output-card">
-        <div class="card-head"><div><h4>Frozen M11A9 Outcome</h4><p>Exact UIF3A response</p></div><span class="state-badge">${state.approvals.status==="success"?"LIVE RESULT":"WAITING"}</span></div>
+        <div class="card-head"><div><h4>Frozen M11A9 Outcome</h4><p>Authoritative UIF3A projection</p></div><span class="state-badge">${state.approvals.status==="success"?"LIVE RESULT":"WAITING"}</span></div>
         <div class="card-body">${approvalOutcome()}</div>
       </section>
     </div>
   </div>`;
 }
-function experiments(){return `<div class="section-stack"><div><h3 class="section-title">Experiments</h3><p class="section-copy">Read-only experiment design from frozen M11A10.</p></div><section class="card"><div class="card-head"><div><h4>Experiment Design</h4><p>Hypothesis, control, treatment, success measure, observation window</p></div><span class="state-badge">DESIGN ONLY</span></div><div class="card-body"><div class="callout">There is deliberately no Launch button. M11A10 has no execution, traffic, budget, scheduling, or platform authority.</div></div></section></div>`}
+function emptyExperimentState(){
+  return {
+    status:"idle",
+    rows:[],
+    error:null,
+    form:{
+      policyVersion:"",
+      selected:[],
+      designs:{}
+    }
+  };
+}
+
+function ensureExperimentDesignForms(){
+  const out=state.approvals.outcome;
+  const rows=Array.isArray(out?.approved_rows)?out.approved_rows:[];
+  const form=state.experiments.form;
+
+  form.selected=form.selected
+    .filter(index=>Number.isInteger(index)&&index>=0&&index<rows.length)
+    .sort((a,b)=>a-b);
+
+  rows.forEach((_row,index)=>{
+    if(!form.designs[index]){
+      form.designs[index]={
+        experimentReference:"",
+        hypothesis:"",
+        controlDefinition:"",
+        treatmentDefinition:"",
+        successMeasure:"",
+        observationWindow:"",
+        designReference:"",
+        designedAt:""
+      };
+    }
+  });
+
+  Object.keys(form.designs).forEach(key=>{
+    const index=Number(key);
+    if(!Number.isInteger(index)||index<0||index>=rows.length){
+      delete form.designs[key];
+    }
+  });
+}
+
+function experimentDesignCards(){
+  const out=state.approvals.outcome;
+  const rows=Array.isArray(out?.approved_rows)?out.approved_rows:[];
+  const form=state.experiments.form;
+
+  if(out?.decision_state!=="APPROVED"){
+    return `<div class="callout">The last M11A9 decision is ${esc(out?.decision_state||"not approved")}. Frozen M11A10 requires <strong>zero experiment design inputs</strong> for REJECTED or DEFERRED decisions. You may still project the explicit empty M11A10 result using the policy version below.</div>`;
+  }
+
+  if(!rows.length){
+    return `<div class="empty">The authoritative APPROVED outcome contains no approved rows. No experiment design input can be bound.</div>`;
+  }
+
+  ensureExperimentDesignForms();
+
+  return `<div class="experiment-candidates">${rows.map((row,index)=>{
+    const selected=form.selected.includes(index);
+    const design=form.designs[index];
+    const required=selected?"required":"";
+    const disabled=selected?"":"disabled";
+
+    return `<article class="experiment-design-card ${selected?"selected":""}">
+      <label class="experiment-design-select-row">
+        <input class="experiment-row-select" type="checkbox" data-index="${index}" ${selected?"checked":""}>
+        <div>
+          <span class="tier-badge">TIER ${esc(row.preference_tier)}</span>
+          <strong>Design against approved row ${index+1}</strong>
+          <small>${esc(dimensionLabel(row.dimensions||[]))} · ${esc(row.currency)} ${esc(row.operating_profit)}</small>
+        </div>
+        <span class="state-badge">${selected?"IN DESIGN":"NOT DESIGNED"}</span>
+      </label>
+
+      <div class="experiment-design-fields">
+        <div class="form-grid">
+          <label class="field"><span>Experiment reference <em>${selected?"required":"select row first"}</em></span><input id="exp-reference-${index}" type="text" value="${esc(design.experimentReference)}" placeholder="experiment-001" ${required} ${disabled}></label>
+          <label class="field"><span>Design reference <em>${selected?"required":"select row first"}</em></span><input id="exp-design-reference-${index}" type="text" value="${esc(design.designReference)}" placeholder="design-001" ${required} ${disabled}></label>
+
+          <label class="field span-2"><span>Hypothesis <em>${selected?"required":"select row first"}</em></span><textarea id="exp-hypothesis-${index}" rows="3" placeholder="Explicit operator-supplied hypothesis" ${required} ${disabled}>${esc(design.hypothesis)}</textarea></label>
+          <label class="field span-2"><span>Control definition <em>${selected?"required":"select row first"}</em></span><textarea id="exp-control-${index}" rows="2" placeholder="Define the control condition" ${required} ${disabled}>${esc(design.controlDefinition)}</textarea></label>
+          <label class="field span-2"><span>Treatment definition <em>${selected?"required":"select row first"}</em></span><textarea id="exp-treatment-${index}" rows="2" placeholder="Define the treatment condition" ${required} ${disabled}>${esc(design.treatmentDefinition)}</textarea></label>
+          <label class="field span-2"><span>Success measure <em>${selected?"required":"select row first"}</em></span><textarea id="exp-success-${index}" rows="2" placeholder="Define the success measure" ${required} ${disabled}>${esc(design.successMeasure)}</textarea></label>
+
+          <label class="field"><span>Observation window <em>${selected?"required":"select row first"}</em></span><input id="exp-window-${index}" type="text" value="${esc(design.observationWindow)}" placeholder="P14D" ${required} ${disabled}><small>Explicit ISO-8601 duration, for example P14D or PT72H.</small></label>
+          <label class="field"><span>Designed at <em>${selected?"required":"select row first"}</em></span><div class="inline-field"><input id="exp-designed-at-${index}" type="datetime-local" value="${esc(design.designedAt)}" ${required} ${disabled}><button class="secondary compact" type="button" data-action="experiment-now" data-index="${index}" ${disabled}>Use current time</button></div><small>Converted to UTC. Frozen M11A10 requires this not to predate the approval decision.</small></label>
+        </div>
+      </div>
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function approvedRecommendationProvenance(row){
+  if(!row)return "";
+
+  return `<details class="provenance">
+    <summary>Complete approved recommendation provenance</summary>
+    <dl>
+      <div><dt>Currency</dt><dd>${esc(row.currency)}</dd></div>
+      <div><dt>Dimensions</dt><dd>${esc(dimensionLabel(row.dimensions||[]))}</dd></div>
+      <div><dt>Operating profit</dt><dd>${esc(row.operating_profit)}</dd></div>
+      <div><dt>Preference tier</dt><dd>${esc(row.preference_tier)}</dd></div>
+      <div><dt>Evaluated at</dt><dd>${esc(row.evaluated_at)}</dd></div>
+      <div><dt>Eligibility policy</dt><dd>${esc(row.eligibility_policy_version)}</dd></div>
+      <div><dt>Eligibility fingerprint</dt><dd>${esc(row.eligibility_policy_fingerprint)}</dd></div>
+      <div><dt>Comparison policy</dt><dd>${esc(row.comparison_policy_version)}</dd></div>
+      <div><dt>Recommendation policy</dt><dd>${esc(row.recommendation_policy_version)}</dd></div>
+      <div><dt>Source preference semantics</dt><dd>${esc(row.source_ordered_preference_semantics)}</dd></div>
+      <div><dt>Source preference contract</dt><dd>${esc(row.source_ordered_preference_contract_version)}</dd></div>
+      <div><dt>Recommendation semantics</dt><dd>${esc(row.recommendation_proposal_semantics)}</dd></div>
+      <div><dt>Recommendation contract</dt><dd>${esc(row.recommendation_proposal_contract_version)}</dd></div>
+    </dl>
+  </details>`;
+}
+
+function experimentOutcome(){
+  const exp=state.experiments;
+
+  if(exp.status==="loading"){
+    return `<div class="recommendation-state experiment-state"><div class="spinner"></div><strong>Projecting frozen M11A10 design...</strong><span>The server is re-projecting the exact M11A9 approval request and binding only the explicit design inputs. Nothing is persisted or executed.</span></div>`;
+  }
+
+  if(exp.status==="error"){
+    return `<div class="recommendation-state error-state experiment-state"><strong>Experiment design projection failed</strong><span>${esc(exp.error||"The frozen M11A10 projection could not be completed.")}</span></div>`;
+  }
+
+  if(exp.status!=="success"){
+    return `<div class="recommendation-state experiment-state"><strong>Awaiting experiment design projection</strong><span>Use the exact last successful M11A9 approval request, select zero or more approved rows to design, and provide every design field explicitly.</span></div>`;
+  }
+
+  const rows=Array.isArray(exp.rows)?exp.rows:[];
+
+  if(!rows.length){
+    return `<div class="experiment-result">
+      <div class="result-banner">
+        <div><span class="result-kicker">M11A10 DESIGN PROJECTION</span><strong>0 design rows returned</strong></div>
+        <span class="state-badge status-online">PROJECTED · NOT EXECUTED</span>
+      </div>
+      <div class="empty experiment-empty-result">Frozen M11A10 returned an explicit empty design set. This is valid for an APPROVED decision with zero supplied designs and is required for REJECTED or DEFERRED decisions.</div>
+      <div class="authority-wall"><strong>Design authority only.</strong> No budget allocation, traffic assignment, scheduling, publication, outreach, platform action, or execution occurred.</div>
+    </div>`;
+  }
+
+  return `<div class="experiment-result">
+    <div class="result-banner">
+      <div><span class="result-kicker">M11A10 DESIGN PROJECTION</span><strong>${rows.length} ${rows.length===1?"design row":"design rows"} returned</strong></div>
+      <span class="state-badge status-online">PROJECTED · NOT EXECUTED</span>
+    </div>
+
+    <div class="experiment-result-list">${rows.map((row,index)=>{
+      const approved=row.approved_recommendation_row||{};
+      return `<article class="experiment-result-card">
+        <div class="experiment-result-head">
+          <div>
+            <span class="result-kicker">DESIGN ${index+1}</span>
+            <h4>${esc(row.experiment_reference)}</h4>
+            <p>${esc(dimensionLabel(approved.dimensions||[]))}</p>
+          </div>
+          <div class="profit-block"><span>Approved operating profit</span><strong>${esc(approved.currency)} ${esc(approved.operating_profit)}</strong></div>
+        </div>
+
+        <div class="experiment-copy-grid">
+          <div><span>Hypothesis</span><p>${esc(row.hypothesis)}</p></div>
+          <div><span>Control</span><p>${esc(row.control_definition)}</p></div>
+          <div><span>Treatment</span><p>${esc(row.treatment_definition)}</p></div>
+          <div><span>Success measure</span><p>${esc(row.success_measure)}</p></div>
+        </div>
+
+        <div class="experiment-metadata-grid">
+          <div><span>Observation window</span><strong>${esc(row.observation_window)}</strong></div>
+          <div><span>Actor</span><strong>${esc(row.actor_reference)}</strong></div>
+          <div><span>Decision reference</span><strong>${esc(row.decision_reference)}</strong></div>
+          <div><span>Decided at</span><strong>${esc(row.decided_at)}</strong></div>
+          <div><span>Design reference</span><strong>${esc(row.design_reference)}</strong></div>
+          <div><span>Designed at</span><strong>${esc(row.designed_at)}</strong></div>
+          <div><span>Recommendation policy</span><strong>${esc(row.recommendation_policy_version)}</strong></div>
+          <div><span>Approval policy</span><strong>${esc(row.approval_policy_version)}</strong></div>
+          <div><span>Experiment design policy</span><strong>${esc(row.experiment_design_policy_version)}</strong></div>
+        </div>
+
+        <details class="provenance">
+          <summary>Frozen M11A10 provenance</summary>
+          <dl>
+            <div><dt>Source approval semantics</dt><dd>${esc(row.source_approval_semantics)}</dd></div>
+            <div><dt>Source approval contract</dt><dd>${esc(row.source_approval_contract_version)}</dd></div>
+            <div><dt>Experiment design semantics</dt><dd>${esc(row.experiment_design_semantics)}</dd></div>
+            <div><dt>Experiment design contract</dt><dd>${esc(row.experiment_design_contract_version)}</dd></div>
+          </dl>
+        </details>
+
+        ${approvedRecommendationProvenance(approved)}
+      </article>`;
+    }).join("")}</div>
+
+    <div class="authority-wall"><strong>Design authority only.</strong> UIF4A projected frozen M11A10 design rows. It did not allocate budget, assign traffic, schedule work, publish content, dispatch outreach, call a platform, or execute an experiment.</div>
+  </div>`;
+}
+
+function experiments(){
+  const approval=state.approvals;
+  const out=approval.outcome;
+  const ready=approval.status==="success"&&approval.request&&out;
+
+  if(!ready){
+    return `<div class="section-stack">
+      <div class="hero">
+        <div><h3>Experiments</h3><p>Live read-only experiment design over the exact last successful M11A9 approval projection.</p></div>
+        <span class="live-badge">${state.backendOnline?"● UIF4A API READY":"● BACKEND OFFLINE"}</span>
+      </div>
+      <section class="card">
+        <div class="card-head"><div><h4>No successful approval request loaded</h4><p>M11A10 cannot infer or reconstruct governance.</p></div><span class="state-badge">M11A10 DESIGN ONLY</span></div>
+        <div class="card-body">
+          <div class="callout">Project an Approval Queue decision first. UIF4B carries that exact approval request into UIF4A; it does not rebuild the decision from visible output.</div>
+          <div class="toolbar" style="margin-top:14px"><button class="primary" data-action="go-approvals">Go to Approval Queue</button></div>
+        </div>
+      </section>
+    </div>`;
+  }
+
+  ensureExperimentDesignForms();
+  const approvedRows=Array.isArray(out.approved_rows)?out.approved_rows:[];
+  const selectedCount=state.experiments.form.selected.length;
+
+  return `<div class="section-stack">
+    <div class="hero">
+      <div><h3>Experiments</h3><p>Bind explicit design inputs to the authoritative M11A9 approval. UIF4A re-projects the exact approval request, so a stale approval may be rejected by the server.</p></div>
+      <span class="live-badge">${state.backendOnline?"● UIF4A API READY":"● BACKEND OFFLINE"}</span>
+    </div>
+
+    <div class="experiment-layout">
+      <section class="card experiment-form-card">
+        <div class="card-head"><div><h4>Experiment Design Request</h4><p>All design semantics are operator supplied.</p></div><span class="state-badge">M11A10 → UIF4A</span></div>
+        <div class="card-body">
+          <form id="experiment-form" class="recommendation-form">
+            <div class="experiment-source">
+              <span>Last successful M11A9 approval</span>
+              <strong>${esc(out.decision_state)} · ${esc(out.currency)}</strong>
+              <small>Decision ${esc(out.decision_reference)} · ${approvedRows.length} approved ${approvedRows.length===1?"row":"rows"} · exact approval request retained from UIF3B.</small>
+            </div>
+
+            ${experimentDesignCards()}
+
+            <div class="form-grid">
+              <label class="field span-2"><span>Experiment design policy version <em>required</em></span><input id="experiment-policy-version" type="text" value="${esc(state.experiments.form.policyVersion)}" placeholder="experiment-design-v1" required><small>No server or UI default is supplied.</small></label>
+            </div>
+
+            <div class="experiment-selection-note">${out.decision_state==="APPROVED"
+              ? `${selectedCount} of ${approvedRows.length} approved rows selected for design. Zero is valid and projects an explicit empty design set.`
+              : `${esc(out.decision_state)} requires zero experiment design inputs.`}</div>
+
+            <div class="form-actions">
+              <button class="primary" type="submit">${out.decision_state==="APPROVED"?"Project Experiment Design":"Project Empty Design Outcome"}</button>
+              <span class="authority-note">Read-only design · not persisted · no budget · no traffic · no launch · no execution</span>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card experiment-output-card">
+        <div class="card-head"><div><h4>Frozen M11A10 Output</h4><p>Authoritative UIF4A projection</p></div><span class="state-badge">${state.experiments.status==="success"?"LIVE RESULT":"WAITING"}</span></div>
+        <div class="card-body">${experimentOutcome()}</div>
+      </section>
+    </div>
+  </div>`;
+}
+
+function renderExperimentOutput(){
+  const card=document.querySelector(".experiment-output-card");
+  if(!card){render();return}
+
+  const badge=card.querySelector(".card-head .state-badge");
+  if(badge){
+    badge.textContent=
+      state.experiments.status==="loading"?"PROJECTING":
+      state.experiments.status==="success"?"LIVE RESULT":
+      state.experiments.status==="error"?"ERROR":
+      "WAITING";
+  }
+
+  const body=card.querySelector(".card-body");
+  if(body)body.innerHTML=experimentOutcome();
+}
+
+function captureExperimentForm(){
+  const form=state.experiments.form;
+  const policy=document.getElementById("experiment-policy-version");
+  if(policy)form.policyVersion=policy.value;
+
+  form.selected=Array.from(document.querySelectorAll(".experiment-row-select:checked"))
+    .map(input=>Number(input.dataset.index))
+    .filter(Number.isInteger)
+    .sort((a,b)=>a-b);
+
+  const rows=Array.isArray(state.approvals.outcome?.approved_rows)
+    ? state.approvals.outcome.approved_rows
+    : [];
+
+  rows.forEach((_row,index)=>{
+    if(!form.designs[index])return;
+    const design=form.designs[index];
+    const fields={
+      experimentReference:`exp-reference-${index}`,
+      designReference:`exp-design-reference-${index}`,
+      hypothesis:`exp-hypothesis-${index}`,
+      controlDefinition:`exp-control-${index}`,
+      treatmentDefinition:`exp-treatment-${index}`,
+      successMeasure:`exp-success-${index}`,
+      observationWindow:`exp-window-${index}`,
+      designedAt:`exp-designed-at-${index}`
+    };
+
+    Object.entries(fields).forEach(([key,id])=>{
+      const input=document.getElementById(id);
+      if(input)design[key]=input.value;
+    });
+  });
+}
+
+async function projectExperimentDesigns(){
+  const formElement=document.getElementById("experiment-form");
+  if(!formElement||!formElement.reportValidity())return;
+
+  const approval=state.approvals;
+  const out=approval.outcome;
+
+  if(approval.status!=="success"||!approval.request||!out){
+    toast("Project an Approval Queue decision first.");
+    return;
+  }
+
+  ensureExperimentDesignForms();
+  captureExperimentForm();
+
+  const form=state.experiments.form;
+  const approvedRows=Array.isArray(out.approved_rows)?out.approved_rows:[];
+
+  if(out.decision_state!=="APPROVED"&&form.selected.length){
+    toast(`${out.decision_state} requires zero experiment design inputs.`);
+    return;
+  }
+
+  const experimentDesignInputs=out.decision_state==="APPROVED"
+    ? approvedRows
+        .map((row,index)=>({row,index}))
+        .filter(item=>form.selected.includes(item.index))
+        .map(item=>{
+          const design=form.designs[item.index];
+          return {
+            experiment_reference:design.experimentReference.trim(),
+            approved_dimensions:(item.row.dimensions||[]).map(
+              dim=>({name:dim.name,value:dim.value})
+            ),
+            hypothesis:design.hypothesis.trim(),
+            control_definition:design.controlDefinition.trim(),
+            treatment_definition:design.treatmentDefinition.trim(),
+            success_measure:design.successMeasure.trim(),
+            observation_window:design.observationWindow.trim(),
+            design_reference:design.designReference.trim(),
+            designed_at:new Date(design.designedAt).toISOString()
+          };
+        })
+    : [];
+
+  const payload={
+    approval_request:approval.request,
+    experiment_design_inputs:experimentDesignInputs,
+    experiment_design_policy:{
+      policy_version:form.policyVersion.trim()
+    }
+  };
+
+  state.experiments.status="loading";
+  state.experiments.rows=[];
+  state.experiments.error=null;
+  renderExperimentOutput();
+
+  try{
+    const response=await fetch(`${API_URL}/optimization/experiment-designs/project`,{
+      method:"POST",
+      cache:"no-store",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+
+    const body=await response.json().catch(()=>null);
+
+    if(!response.ok){
+      state.experiments.status="error";
+      state.experiments.rows=[];
+      state.experiments.error=typeof body?.detail==="string"
+        ? body.detail
+        : `Experiment design projection failed with HTTP ${response.status}.`;
+      renderExperimentOutput();
+      return;
+    }
+
+    state.experiments.status="success";
+    state.experiments.rows=Array.isArray(body?.experiment_designs)
+      ? body.experiment_designs
+      : [];
+    state.experiments.error=null;
+    renderExperimentOutput();
+  }catch(error){
+    console.error("Experiment design projection error:",error);
+    state.experiments.status="error";
+    state.experiments.rows=[];
+    state.experiments.error="The UIF4A experiment design API is unreachable.";
+    renderExperimentOutput();
+  }
+}
 function agents(){return `<div class="section-stack"><div><h3 class="section-title">AI Agents</h3><p class="section-copy">Live workforce plus existing discovery mission controls.</p></div><section class="card"><div class="card-head"><div><h4>Runtime Workers</h4><p>Shared workforce registry</p></div><span class="state-badge">${state.workers.length} workers</span></div><div class="card-body">${workers(30)}</div></section><section class="card"><div class="card-head"><div><h4>Mission Controls</h4><p>Existing system commands</p></div></div><div class="card-body"><div class="toolbar"><button class="primary" data-action="product-discovery">Launch Product Discovery</button><button class="secondary" data-action="affiliate-discovery">Launch Affiliate Discovery</button></div></div></section></div>`}
 function activity(){return `<div class="section-stack"><div><h3 class="section-title">Activity</h3><p class="section-copy">Latest runtime events from /system/events.</p></div><section class="card"><div class="card-body">${events(50)}</div></section></div>`}
 
@@ -296,6 +720,7 @@ async function projectRecommendations(){
     status:"idle",
     outcome:null,
     error:null,
+    request:null,
     form:{
       decisionState:"",
       selected:[],
@@ -305,6 +730,7 @@ async function projectRecommendations(){
       policyVersion:""
     }
   };
+  state.experiments=emptyExperimentState();
   state.recommendations={status:"loading",rows:[],error:null,request:payload};renderRecommendationOutput();
   try{
     const response=await fetch(`${API_URL}/optimization/recommendations/project`,{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
@@ -393,6 +819,8 @@ async function projectApprovalDecision(){
     }
   };
 
+  state.experiments=emptyExperimentState();
+  state.approvals.request=payload;
   state.approvals.status="loading";
   state.approvals.outcome=null;
   state.approvals.error=null;
@@ -442,6 +870,8 @@ function bindActions(){
     if(a==="product-discovery")await postCommand("/system/command/run-product-discovery","Product discovery");
     if(a==="affiliate-discovery")await postCommand("/system/command/run-affiliate","Affiliate discovery");
     if(a==="go-recommendations")activate("recommendations");
+    if(a==="go-approvals")activate("approvals");
+    if(a==="go-experiments")activate("experiments");
     if(a==="utc-now"){
       const input=document.getElementById("rec-evaluated-at");
       if(input)input.value=utcInputValue();
@@ -450,6 +880,16 @@ function bindActions(){
       state.approvals.form.decidedAt=utcInputValue();
       const input=document.getElementById("approval-decided-at");
       if(input)input.value=state.approvals.form.decidedAt;
+    }
+    if(a==="experiment-now"){
+      captureExperimentForm();
+      const index=Number(b.dataset.index);
+      ensureExperimentDesignForms();
+      if(Number.isInteger(index)&&state.experiments.form.designs[index]){
+        state.experiments.form.designs[index].designedAt=utcInputValue();
+        const input=document.getElementById(`exp-designed-at-${index}`);
+        if(input)input.value=state.experiments.form.designs[index].designedAt;
+      }
     }
   });
 
@@ -485,6 +925,30 @@ function bindActions(){
     ["approval-actor","approval-reference","approval-decided-at","approval-policy-version"].forEach(id=>{
       const input=document.getElementById(id);
       if(input)input.oninput=captureApprovalForm;
+    });
+  }
+
+  const experimentForm=document.getElementById("experiment-form");
+  if(experimentForm){
+    experimentForm.onsubmit=async event=>{
+      event.preventDefault();
+      await projectExperimentDesigns();
+    };
+
+    experimentForm.querySelectorAll(".experiment-row-select").forEach(input=>{
+      input.onchange=()=>{
+        captureExperimentForm();
+        render();
+      };
+    });
+
+    const policy=document.getElementById("experiment-policy-version");
+    if(policy)policy.oninput=captureExperimentForm;
+
+    experimentForm.querySelectorAll(
+      'input[id^="exp-"], textarea[id^="exp-"]'
+    ).forEach(input=>{
+      input.oninput=captureExperimentForm;
     });
   }
 }
