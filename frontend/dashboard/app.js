@@ -18,6 +18,7 @@ const state={
     evidence:{},
     evidenceStatus:{}
   },
+  audience:{status:"idle",profiles:[],signals:[],qualifications:[],segments:[],segmentRevisions:[],memberships:[],error:null},
   contentOps:{status:"idle",briefs:[],generationRuns:[],artifacts:[],evaluations:[],repurposingRuns:[],error:null},
   distribution:{status:"idle",queue:[],error:null},
   commissions:{
@@ -76,6 +77,7 @@ async function refreshData({silent=false}={}){
     productsData,
     discoveryRunsData,
     contentOperationsData,
+    audienceVisibilityData,
     publishingQueueData,
     earningsData,
     payoutsData
@@ -87,6 +89,7 @@ async function refreshData({silent=false}={}){
     api("/products/"),
     api("/discovery/runs?limit=50"),
     api("/content/operations?limit=50"),
+    api("/audience/visibility?limit=50"),
     api("/publisher/queue"),
     api("/affiliate-earnings/?limit=100"),
     api("/affiliate-payouts/?limit=100")
@@ -103,6 +106,17 @@ async function refreshData({silent=false}={}){
     status:discoveryRunsData?"success":"error",
     runs:Array.isArray(discoveryRunsData)?discoveryRunsData:[],
     error:discoveryRunsData?null:"Discovery run index API unavailable."
+  };
+
+  state.audience={
+    status:audienceVisibilityData?"success":"error",
+    profiles:Array.isArray(audienceVisibilityData?.profiles)?audienceVisibilityData.profiles:[],
+    signals:Array.isArray(audienceVisibilityData?.signals)?audienceVisibilityData.signals:[],
+    qualifications:Array.isArray(audienceVisibilityData?.qualifications)?audienceVisibilityData.qualifications:[],
+    segments:Array.isArray(audienceVisibilityData?.segments)?audienceVisibilityData.segments:[],
+    segmentRevisions:Array.isArray(audienceVisibilityData?.segment_revisions)?audienceVisibilityData.segment_revisions:[],
+    memberships:Array.isArray(audienceVisibilityData?.memberships)?audienceVisibilityData.memberships:[],
+    error:audienceVisibilityData?null:"Audience visibility API unavailable."
   };
 
   state.contentOps={
@@ -788,6 +802,67 @@ async function loadOpportunityEvidence(candidateId){
 }
 
 
+
+/* UIF5D — Read-Only Audience Intelligence Visibility */
+function audienceIntelligence(){
+  const surface=state.audience;
+  const profiles=surface.profiles||[];
+  const signals=surface.signals||[];
+  const qualifications=surface.qualifications||[];
+  const segments=surface.segments||[];
+  const revisions=surface.segmentRevisions||[];
+  const memberships=surface.memberships||[];
+  const qualified=qualifications.filter(row=>["QUALIFIED","HIGH_INTENT"].includes(String(row.qualification_status||"").toUpperCase())).length;
+  const activeSegments=segments.filter(row=>!row.retired_at).length;
+
+  return `<div class="section-stack">
+    <div class="hero">
+      <div>
+        <h3>Audience</h3>
+        <p>Read-only visibility into durable audience profiles, intent and problem signals, qualification assessments, segments, and memberships. Subject IDs remain pseudonymous; UIF5D does not expose external identities or contact points.</p>
+      </div>
+      <span class="live-badge">${state.backendOnline&&surface.status==="success"?"● AUDIENCE INTELLIGENCE LIVE":"● AUDIENCE DATA UNAVAILABLE"}</span>
+    </div>
+
+    <div class="grid audience-kpi-grid">
+      ${kpi("Profiles",profiles.length,"Latest up to 50 immutable snapshots")}
+      ${kpi("Signals",signals.length,"Problem, interest, intent and purchase signals")}
+      ${kpi("Qualified+",qualified,"Recorded QUALIFIED or HIGH_INTENT assessments")}
+      ${kpi("Active Segments",activeSegments,"Segments without a retirement timestamp")}
+      ${kpi("Memberships",memberships.length,"Latest up to 50 evaluation results")}
+    </div>
+
+    ${surface.status==="error"?`<div class="operations-error">${esc(surface.error||"Audience visibility API unavailable.")}</div>`:""}
+
+    <section class="card">
+      <div class="card-head"><div><h4>Audience Profiles</h4><p>Immutable derived snapshots keyed by pseudonymous subject ID</p></div><span class="state-badge">${profiles.length} loaded</span></div>
+      <div class="card-body table-wrap">${profiles.length?`<table class="data-table audience-table"><thead><tr><th>Profile</th><th>Subject</th><th>Ruleset</th><th>Derived</th><th>Effective As Of</th><th>Last Signal</th></tr></thead><tbody>${profiles.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.subject_id||"—")}</td><td>${esc(row.profile_ruleset_version||"—")}</td><td>${esc(dateTime(row.derived_at))}</td><td>${esc(dateTime(row.effective_as_of))}</td><td>${esc(dateTime(row.last_signal_observed_at))}</td></tr>`).join("")}</tbody></table>`:`<div class="empty">${surface.status==="success"?"The audience profile ledger is live and currently empty.":"No audience profiles are available."}</div>`}</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h4>Audience Signals</h4><p>Recorded problem, interest, intent, purchase, engagement, and business-need signals</p></div><span class="state-badge">${signals.length} loaded</span></div>
+      <div class="card-body table-wrap">${signals.length?`<table class="data-table audience-table"><thead><tr><th>Signal</th><th>Subject</th><th>Type</th><th>Topic</th><th>Intent Stage</th><th>Strength</th><th>Confidence</th><th>Observed</th></tr></thead><tbody>${signals.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.subject_id||"—")}</td><td>${esc(row.signal_type||"—")}</td><td>${esc(row.topic_label||row.topic_slug||"—")}</td><td>${esc(row.intent_stage||"—")}</td><td>${esc(row.strength??"—")}</td><td>${esc(row.confidence??"—")}</td><td>${esc(dateTime(row.observed_at))}</td></tr>`).join("")}</tbody></table>`:`<div class="empty">${surface.status==="success"?"The audience signal ledger is live and currently empty.":"No audience signals are available."}</div>`}</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h4>Qualification Assessments</h4><p>Recorded intent and qualification scores; the UI performs no recalculation</p></div><span class="state-badge">${qualifications.length} loaded</span></div>
+      <div class="card-body table-wrap">${qualifications.length?`<table class="data-table audience-table"><thead><tr><th>Assessment</th><th>Profile</th><th>Context</th><th>Intent Score</th><th>Qualification Score</th><th>Status</th><th>Purchase Signal</th><th>Business Need</th><th>Derived</th></tr></thead><tbody>${qualifications.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.profile_id||"—")}</td><td>${esc(row.context_type||"—")}</td><td>${esc(row.intent_score??"—")}</td><td>${esc(row.qualification_score??"—")}</td><td><span class="status-pill ${operationStatusClass(row.qualification_status)}">${esc(row.qualification_status||"UNKNOWN")}</span></td><td>${esc(row.purchase_signal??"—")}</td><td>${esc(row.business_need_fit??"—")}</td><td>${esc(dateTime(row.derived_at))}</td></tr>`).join("")}</tbody></table>`:`<div class="empty">${surface.status==="success"?"No durable audience qualification assessments are currently recorded.":"No qualification data is available."}</div>`}</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h4>Audience Segments</h4><p>Immutable segment definitions and latest loaded revisions</p></div><span class="state-badge">${segments.length} segments · ${revisions.length} revisions</span></div>
+      <div class="card-body table-wrap">${segments.length?`<table class="data-table audience-table"><thead><tr><th>Segment</th><th>Key</th><th>Name</th><th>Status</th><th>Created</th><th>Loaded Revisions</th></tr></thead><tbody>${segments.map(row=>{const count=revisions.filter(rev=>rev.segment_id===row.id).length;return `<tr><td class="operations-reference">${esc(row.id||"—")}</td><td>${esc(row.segment_key||"—")}</td><td>${esc(row.name||"—")}</td><td><span class="status-pill ${row.retired_at?"status-offline":"status-online"}">${row.retired_at?"RETIRED":"ACTIVE"}</span></td><td>${esc(dateTime(row.created_at))}</td><td>${esc(count)}</td></tr>`;}).join("")}</tbody></table>`:`<div class="empty">${surface.status==="success"?"The audience segment ledger is live and currently empty.":"No segment data is available."}</div>`}</div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><div><h4>Segment Memberships</h4><p>Recorded profile-to-segment evaluation outcomes</p></div><span class="state-badge">${memberships.length} loaded</span></div>
+      <div class="card-body table-wrap">${memberships.length?`<table class="data-table audience-table"><thead><tr><th>Membership</th><th>Profile</th><th>Segment Revision</th><th>Member</th><th>Evaluated</th></tr></thead><tbody>${memberships.map(row=>`<tr><td class="operations-reference">${esc(row.id||"—")}</td><td class="operations-reference">${esc(row.profile_id||"—")}</td><td class="operations-reference">${esc(row.segment_revision_id||"—")}</td><td>${row.is_member===true?"Yes":row.is_member===false?"No":"—"}</td><td>${esc(dateTime(row.evaluated_at))}</td></tr>`).join("")}</tbody></table>`:`<div class="empty">${surface.status==="success"?"No durable audience segment memberships are currently recorded.":"No membership data is available."}</div>`}</div>
+    </section>
+
+    <div class="authority-wall"><strong>Visibility only.</strong> UIF5D reads immutable audience intelligence. It exposes no external identity resolution, contact enrichment, targeting, outreach, profile mutation, signal extraction, qualification recalculation, segment evaluation, mission launch, or execution authority.</div>
+  </div>`;
+}
+
 /* UIF5C — Read-Only Content Operations Visibility */
 function contentText(value,max=92){const text=String(value??"");return text.length>max?`${text.slice(0,max-1)}…`:text}
 function contentOperations(){
@@ -1150,7 +1225,7 @@ async function projectApprovalDecision(){
   }
 }
 
-const renderers={overview,offers,opportunities,audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:contentOperations,distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
+const renderers={overview,offers,opportunities,audience:audienceIntelligence,content:contentOperations,distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
 
 function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
 function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}
