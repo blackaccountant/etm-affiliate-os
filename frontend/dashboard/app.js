@@ -20,6 +20,7 @@ const state={
   },
   audience:{status:"idle",profiles:[],signals:[],qualifications:[],segments:[],segmentRevisions:[],memberships:[],error:null},
   attribution:{status:"idle",publications:[],contexts:[],clicks:[],facts:[],earningLinks:[],settlementLinks:[],error:null},
+  performance:{status:"idle",rows:[],error:null},
   contentOps:{status:"idle",briefs:[],generationRuns:[],artifacts:[],evaluations:[],repurposingRuns:[],error:null},
   distribution:{status:"idle",queue:[],error:null},
   commissions:{
@@ -80,6 +81,7 @@ async function refreshData({silent=false}={}){
     contentOperationsData,
     audienceVisibilityData,
     attributionLineageData,
+    economicPerformanceData,
     publishingQueueData,
     earningsData,
     payoutsData
@@ -93,6 +95,7 @@ async function refreshData({silent=false}={}){
     api("/content/operations?limit=50"),
     api("/audience/visibility?limit=50"),
     api("/attribution/lineage?limit=50"),
+    api("/economics/performance"),
     api("/publisher/queue"),
     api("/affiliate-earnings/?limit=100"),
     api("/affiliate-payouts/?limit=100")
@@ -131,6 +134,12 @@ async function refreshData({silent=false}={}){
     earningLinks:Array.isArray(attributionLineageData?.earning_links)?attributionLineageData.earning_links:[],
     settlementLinks:Array.isArray(attributionLineageData?.settlement_links)?attributionLineageData.settlement_links:[],
     error:attributionLineageData?null:"Attribution lineage API unavailable."
+  };
+
+  state.performance={
+    status:economicPerformanceData?"success":"error",
+    rows:Array.isArray(economicPerformanceData?.rows)?economicPerformanceData.rows:[],
+    error:economicPerformanceData?null:"Economic performance API unavailable."
   };
 
   state.contentOps={
@@ -983,6 +992,63 @@ function attributionLineage(){
   </div>`;
 }
 
+/* UIF5F — Frozen M10 Economic Performance Visibility */
+function economicPerformance(){
+  const surface=state.performance;
+  const rows=surface.rows||[];
+  const profitable=rows.filter(row=>Number(row.operating_profit)>0).length;
+  const loss=rows.filter(row=>Number(row.operating_profit)<0).length;
+  const zero=rows.filter(row=>Number(row.operating_profit)===0).length;
+
+  return `<div class="section-stack">
+    <div class="hero">
+      <div>
+        <h3>Economic Performance</h3>
+        <p>Read-only projection of frozen M10 economic truth at native-currency aggregate grain. Each currency remains separate; UIF5F performs no FX conversion, recomputation, allocation, accounting close, or ROI calculation.</p>
+      </div>
+      <span class="live-badge">${state.backendOnline&&surface.status==="success"?"● ECONOMIC PROJECTION LIVE":"● ECONOMIC DATA UNAVAILABLE"}</span>
+    </div>
+
+    <div class="grid operations-kpi-grid">
+      ${kpi("Currency Buckets",rows.length,"One frozen projection row per native currency")}
+      ${kpi("Profitable",profitable,"Operating profit above zero")}
+      ${kpi("Loss",loss,"Operating profit below zero")}
+      ${kpi("Zero",zero,"Operating profit exactly zero")}
+    </div>
+
+    ${surface.status==="error"?`<div class="operations-error">${esc(surface.error||"Economic performance API unavailable.")}</div>`:""}
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h4>Frozen Operating-Profit Projection</h4>
+          <p>Net realized commission → direct cost → contribution profit → shared allocation → global allocation → operating profit</p>
+        </div>
+        <span class="state-badge">${rows.length} currency ${rows.length===1?"bucket":"buckets"}</span>
+      </div>
+      <div class="card-body table-wrap">
+        ${rows.length?`<table class="data-table operations-table">
+          <thead><tr><th>Currency</th><th>Net Realized</th><th>Direct Cost</th><th>Contribution Profit</th><th>Shared Cost</th><th>Allocated Contribution</th><th>Global Cost</th><th>Operating Profit</th></tr></thead>
+          <tbody>${rows.map(row=>`<tr>
+            <td><strong>${esc(row.currency||"—")}</strong></td>
+            <td>${esc(row.net_realized_commission??"—")}</td>
+            <td>${esc(row.directly_attributable_cost??"—")}</td>
+            <td>${esc(row.contribution_profit??"—")}</td>
+            <td>${esc(row.allocated_shared_cost??"—")}</td>
+            <td>${esc(row.allocated_contribution_profit??"—")}</td>
+            <td>${esc(row.allocated_global_cost??"—")}</td>
+            <td><strong>${esc(row.operating_profit??"—")}</strong></td>
+          </tr>`).join("")}</tbody>
+        </table>`:`<div class="empty">${surface.status==="success"?"The frozen operating-profit projection is live and currently returned no native-currency buckets.":"No economic performance projection is available."}</div>`}
+      </div>
+    </section>
+
+    ${rows.length?`<section class="card"><div class="card-head"><div><h4>Projection Semantics</h4><p>Frozen M10 authority carried through the transport unchanged</p></div><span class="state-badge">READ ONLY</span></div><div class="card-body"><div class="mini-list">${rows.map(row=>`<div class="mini-row"><span>${esc(row.currency||"—")}</span><span>${esc(row.semantics||"—")}</span></div>`).join("")}</div></div></section>`:""}
+
+    <div class="authority-wall"><strong>Projection visibility only.</strong> UIF5F calls frozen M10 operating-profit projection authority at aggregate native-currency grain. It does not create or finalize costs, allocate shared or global costs, convert FX, produce accounting-final P&amp;L or ROI, alter attribution, infer recommendations or approvals, allocate budget, assign traffic, or execute anything.</div>
+  </div>`;
+}
+
 /* UIF5A — Existing Operations Visibility */
 function operationStatusClass(status){
   const value=String(status||"").toLowerCase();
@@ -1329,7 +1395,7 @@ async function projectApprovalDecision(){
   }
 }
 
-const renderers={overview,offers,opportunities,audience:audienceIntelligence,content:contentOperations,distribution,attribution:attributionLineage,commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
+const renderers={overview,offers,opportunities,audience:audienceIntelligence,content:contentOperations,distribution,attribution:attributionLineage,commissions,performance:economicPerformance,recommendations,approvals,experiments,agents,activity};
 
 function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
 function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}
