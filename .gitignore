@@ -10,6 +10,7 @@ env/
 
 # Pytest
 .pytest_cache/
+backend/.qualification-evidence/
 
 # Environment files
 .env
