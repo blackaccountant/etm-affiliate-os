@@ -85,3 +85,12 @@ button,input{font:inherit;color:inherit}.app-shell{min-height:100vh;display:grid
 @media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.two-col{grid-template-columns:1fr}}
 @media(max-width:820px){.app-shell{grid-template-columns:1fr}.sidebar{position:fixed;left:-280px;width:270px;transition:.2s}.sidebar.open{left:0}.menu-button{display:block;width:40px;height:40px;border:1px solid var(--border);border-radius:10px;background:var(--panel)}.content{padding:20px 16px}.topbar{padding:14px 16px}.kpi-grid{grid-template-columns:1fr 1fr}.hero{align-items:flex-start;flex-direction:column}.form-grid{grid-template-columns:1fr}.field.span-2{grid-column:span 1}.recommendation-card-head,.approval-candidate-main{flex-direction:column;align-items:flex-start}.profit-block,.approval-profit{text-align:left}.recommendation-detail-grid,.approval-summary-grid,.experiment-copy-grid,.experiment-metadata-grid{grid-template-columns:1fr}.experiment-design-select-row{grid-template-columns:auto minmax(0,1fr)}.experiment-design-select-row>.state-badge{grid-column:2}.decision-options{grid-template-columns:1fr}.provenance dl div{grid-template-columns:1fr}}
 @media(max-width:520px){.kpi-grid{grid-template-columns:1fr}.connection-pill{display:none}.inline-field{flex-direction:column}}
+
+/* UIF5A — Existing Operations Visibility */
+.operations-kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.operations-table{min-width:980px}
+.operations-table .status-pill{display:inline-flex;align-items:center;white-space:nowrap}
+.operations-reference{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.operations-error{padding:12px 14px;border:1px solid rgba(255,108,121,.34);background:rgba(255,108,121,.07);border-radius:12px;color:#ffb3ba;font-size:11px;line-height:1.5}
+@media(max-width:1100px){.operations-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.operations-kpi-grid{grid-template-columns:1fr}}

@@ -6,6 +6,13 @@ const state={
   workers:[],
   events:[],
   products:[],
+  distribution:{status:"idle",queue:[],error:null},
+  commissions:{
+    earningsStatus:"idle",
+    payoutsStatus:"idle",
+    earnings:[],
+    payouts:[]
+  },
   activeView:"overview",
   recommendations:{status:"idle",rows:[],error:null,request:null},
   approvals:{
@@ -48,9 +55,48 @@ function eventClass(type){const t=String(type||"INFO").toUpperCase();return t===
 function time(value){if(!value)return"--:--";const d=new Date(value);return Number.isNaN(d.getTime())?"--:--":d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
 
 async function refreshData({silent=false}={}){
-  const [health,dashboard,workersData,eventsData,productsData]=await Promise.all([api("/health"),api("/system/dashboard"),api("/system/workers"),api("/system/events"),api("/products/")]);
-  state.health=health;state.dashboard=dashboard;state.workers=Array.isArray(workersData)?workersData:[];state.events=Array.isArray(eventsData)?eventsData:[];state.products=normalizeProducts(productsData);
-  setBackendStatus(Boolean(health?.success));document.getElementById("sidebar-version").textContent=health?.success?"FastAPI connected":"127.0.0.1:8000";
+  const [
+    health,
+    dashboard,
+    workersData,
+    eventsData,
+    productsData,
+    publishingQueueData,
+    earningsData,
+    payoutsData
+  ]=await Promise.all([
+    api("/health"),
+    api("/system/dashboard"),
+    api("/system/workers"),
+    api("/system/events"),
+    api("/products/"),
+    api("/publisher/queue"),
+    api("/affiliate-earnings/?limit=100"),
+    api("/affiliate-payouts/?limit=100")
+  ]);
+
+  state.health=health;
+  state.dashboard=dashboard;
+  state.workers=Array.isArray(workersData)?workersData:[];
+  state.events=Array.isArray(eventsData)?eventsData:[];
+  state.products=normalizeProducts(productsData);
+
+  state.distribution={
+    status:publishingQueueData?"success":"error",
+    queue:Array.isArray(publishingQueueData?.queue)?publishingQueueData.queue:[],
+    error:publishingQueueData?null:"Publishing queue API unavailable."
+  };
+
+  state.commissions={
+    earningsStatus:earningsData?"success":"error",
+    payoutsStatus:payoutsData?"success":"error",
+    earnings:Array.isArray(earningsData?.earnings)?earningsData.earnings:[],
+    payouts:Array.isArray(payoutsData?.payouts)?payoutsData.payouts:[]
+  };
+
+  setBackendStatus(Boolean(health?.success));
+  document.getElementById("sidebar-version").textContent=health?.success?"FastAPI connected":"127.0.0.1:8000";
+
   if(!["recommendations","approvals","experiments"].includes(state.activeView))render();
   if(!silent)toast(health?.success?"Live data refreshed.":"Backend is not reachable.");
 }
@@ -651,6 +697,146 @@ async function projectExperimentDesigns(){
     renderExperimentOutput();
   }
 }
+
+/* UIF5A — Existing Operations Visibility */
+function operationStatusClass(status){
+  const value=String(status||"").toLowerCase();
+  if(["published","paid","completed","approved","succeeded","success"].includes(value))return "status-online";
+  if(["queued","pending","processing","scheduled","running","created"].includes(value))return "status-busy";
+  if(["failed","rejected","cancelled","canceled","error"].includes(value))return "status-offline";
+  return "";
+}
+
+function dateTime(value){
+  if(!value)return "—";
+  const parsed=new Date(value);
+  return Number.isNaN(parsed.getTime())?String(value):parsed.toLocaleString();
+}
+
+function distribution(){
+  const surface=state.distribution;
+  const rows=surface.queue||[];
+  const published=rows.filter(row=>String(row.status||"").toLowerCase()==="published").length;
+  const waiting=rows.filter(row=>["queued","pending","scheduled","processing"].includes(String(row.status||"").toLowerCase())).length;
+  const failed=rows.filter(row=>["failed","error","cancelled","canceled"].includes(String(row.status||"").toLowerCase())).length;
+
+  return `<div class="section-stack">
+    <div class="hero">
+      <div>
+        <h3>Distribution</h3>
+        <p>Read-only visibility into the existing publisher queue. UIF5A does not expose publish, retry, schedule, dispatch, or execution controls.</p>
+      </div>
+      <span class="live-badge">${state.backendOnline&&surface.status==="success"?"● PUBLISHER QUEUE LIVE":"● QUEUE UNAVAILABLE"}</span>
+    </div>
+
+    <div class="grid operations-kpi-grid">
+      ${kpi("Loaded Queue Items",rows.length,"Live /publisher/queue records")}
+      ${kpi("Published",published,"Status reported by publisher queue")}
+      ${kpi("Waiting",waiting,"Queued, pending, scheduled or processing")}
+      ${kpi("Failed",failed,"Failed or cancelled queue records")}
+    </div>
+
+    ${surface.status==="error"?`<div class="operations-error">${esc(surface.error||"Publishing queue API unavailable.")}</div>`:""}
+
+    <section class="card">
+      <div class="card-head">
+        <div><h4>Publishing Queue</h4><p>Existing backend records only</p></div>
+        <span class="state-badge">${rows.length} loaded</span>
+      </div>
+      <div class="card-body table-wrap">
+        ${rows.length?`<table class="data-table operations-table">
+          <thead><tr><th>Queue</th><th>Asset</th><th>Title</th><th>Channel</th><th>Status</th><th>Created</th><th>Published URL</th></tr></thead>
+          <tbody>${rows.map(row=>`<tr>
+            <td>#${esc(row.queue_id??"—")}</td>
+            <td>#${esc(row.content_asset_id??"—")}</td>
+            <td>${esc(row.title||"—")}</td>
+            <td>${esc(row.channel||"—")}</td>
+            <td><span class="status-pill ${operationStatusClass(row.status)}">${esc(row.status||"UNKNOWN")}</span></td>
+            <td>${esc(dateTime(row.created_at))}</td>
+            <td class="operations-reference">${esc(row.published_url||"—")}</td>
+          </tr>`).join("")}</tbody>
+        </table>`:`<div class="empty">${surface.status==="success"?"The publisher queue is live and currently empty.":"No publisher queue data is available."}</div>`}
+      </div>
+    </section>
+
+    <div class="authority-wall"><strong>Visibility only.</strong> UIF5A intentionally does not expose the existing publisher mutation endpoint. Publishing authority remains where the backend already defines it.</div>
+  </div>`;
+}
+
+function commissions(){
+  const surface=state.commissions;
+  const earnings=surface.earnings||[];
+  const payouts=surface.payouts||[];
+  const paidEarnings=earnings.filter(row=>String(row.status||"").toLowerCase()==="paid").length;
+  const completedPayouts=payouts.filter(row=>["paid","completed"].includes(String(row.status||"").toLowerCase())).length;
+  const hasError=surface.earningsStatus==="error"||surface.payoutsStatus==="error";
+
+  return `<div class="section-stack">
+    <div class="hero">
+      <div>
+        <h3>Commissions & Payouts</h3>
+        <p>Read-only settlement visibility from the existing affiliate earnings and payout APIs. Monetary values are displayed in their recorded native currency; UIF5A performs no FX conversion.</p>
+      </div>
+      <span class="live-badge">${state.backendOnline&&!hasError?"● SETTLEMENT DATA LIVE":"● PARTIAL / UNAVAILABLE"}</span>
+    </div>
+
+    <div class="grid operations-kpi-grid">
+      ${kpi("Loaded Earnings",earnings.length,"Latest up to 100 records")}
+      ${kpi("Paid Earnings",paidEarnings,"Status reported by earnings API")}
+      ${kpi("Loaded Payouts",payouts.length,"Latest up to 100 records")}
+      ${kpi("Completed Payouts",completedPayouts,"Paid or completed payout status")}
+    </div>
+
+    ${surface.earningsStatus==="error"?`<div class="operations-error">Affiliate earnings API unavailable.</div>`:""}
+    ${surface.payoutsStatus==="error"?`<div class="operations-error">Affiliate payouts API unavailable.</div>`:""}
+
+    <section class="card">
+      <div class="card-head">
+        <div><h4>Affiliate Earnings</h4><p>Commission records returned by /affiliate-earnings/</p></div>
+        <span class="state-badge">${earnings.length} loaded</span>
+      </div>
+      <div class="card-body table-wrap">
+        ${earnings.length?`<table class="data-table operations-table">
+          <thead><tr><th>Earning</th><th>Program</th><th>Conversion</th><th>Commission</th><th>Currency</th><th>Status</th><th>Payout Reference</th><th>Paid / Created</th></tr></thead>
+          <tbody>${earnings.map(row=>`<tr>
+            <td>#${esc(row.id??"—")}</td>
+            <td>#${esc(row.affiliate_program_id??"—")}</td>
+            <td>#${esc(row.conversion_id??"—")}</td>
+            <td>${esc(row.commission_amount??"—")}</td>
+            <td>${esc(row.currency||"—")}</td>
+            <td><span class="status-pill ${operationStatusClass(row.status)}">${esc(row.status||"UNKNOWN")}</span></td>
+            <td class="operations-reference">${esc(row.payout_reference||"—")}</td>
+            <td>${esc(dateTime(row.paid_at||row.created_at))}</td>
+          </tr>`).join("")}</tbody>
+        </table>`:`<div class="empty">${surface.earningsStatus==="success"?"The earnings API is live and currently returned no records.":"No earnings data is available."}</div>`}
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div><h4>Affiliate Payouts</h4><p>Payout records returned by /affiliate-payouts/</p></div>
+        <span class="state-badge">${payouts.length} loaded</span>
+      </div>
+      <div class="card-body table-wrap">
+        ${payouts.length?`<table class="data-table operations-table">
+          <thead><tr><th>Payout</th><th>Program</th><th>Amount</th><th>Currency</th><th>Status</th><th>Payout Reference</th><th>Paid / Created</th></tr></thead>
+          <tbody>${payouts.map(row=>`<tr>
+            <td>#${esc(row.id??"—")}</td>
+            <td>#${esc(row.affiliate_program_id??"—")}</td>
+            <td>${esc(row.total_amount??"—")}</td>
+            <td>${esc(row.currency||"—")}</td>
+            <td><span class="status-pill ${operationStatusClass(row.status)}">${esc(row.status||"UNKNOWN")}</span></td>
+            <td class="operations-reference">${esc(row.payout_reference||"—")}</td>
+            <td>${esc(dateTime(row.paid_at||row.created_at))}</td>
+          </tr>`).join("")}</tbody>
+        </table>`:`<div class="empty">${surface.payoutsStatus==="success"?"The payout API is live and currently returned no records.":"No payout data is available."}</div>`}
+      </div>
+    </section>
+
+    <div class="authority-wall"><strong>Read-only settlement surface.</strong> UIF5A does not expose mark-paid, create payout, process, complete, fail, or retry mutations. It only displays records already returned by the backend.</div>
+  </div>`;
+}
+
 function agents(){return `<div class="section-stack"><div><h3 class="section-title">AI Agents</h3><p class="section-copy">Live workforce plus existing discovery mission controls.</p></div><section class="card"><div class="card-head"><div><h4>Runtime Workers</h4><p>Shared workforce registry</p></div><span class="state-badge">${state.workers.length} workers</span></div><div class="card-body">${workers(30)}</div></section><section class="card"><div class="card-head"><div><h4>Mission Controls</h4><p>Existing system commands</p></div></div><div class="card-body"><div class="toolbar"><button class="primary" data-action="product-discovery">Launch Product Discovery</button><button class="secondary" data-action="affiliate-discovery">Launch Affiliate Discovery</button></div></div></section></div>`}
 function activity(){return `<div class="section-stack"><div><h3 class="section-title">Activity</h3><p class="section-copy">Latest runtime events from /system/events.</p></div><section class="card"><div class="card-body">${events(50)}</div></section></div>`}
 
@@ -858,7 +1044,7 @@ async function projectApprovalDecision(){
   }
 }
 
-const renderers={overview,offers,opportunities:()=>pending("Opportunities","Opportunity intelligence and scoring views."),audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:()=>pending("Content Assets","Research briefs, generated content, evaluations and repurposed assets."),distribution:()=>pending("Distribution","Prepared content, distribution runs and delivery status."),attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions:()=>pending("Commissions & Payouts","Revenue settlement and payout visibility.",true),performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
+const renderers={overview,offers,opportunities:()=>pending("Opportunities","Opportunity intelligence and scoring views."),audience:()=>pending("Audience","Audience intelligence, signals, profiles and qualification."),content:()=>pending("Content Assets","Research briefs, generated content, evaluations and repurposed assets."),distribution,attribution:()=>pending("Attribution","Content → click → conversion → commission → payout → profit lineage.",true),commissions,performance:()=>pending("Economic Performance","Revenue-rooted operating-profit and optimization evidence.",true),recommendations,approvals,experiments,agents,activity};
 
 function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
 function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}
