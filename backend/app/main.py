@@ -19,6 +19,7 @@ from app.system.routes import router as system_router
 
 from app.core.config import settings
 from app.core.api_security import install_api_security
+from app.operator_console import operator_console
 from app.exceptions.handlers import register_exception_handlers
 from app.logging.logger import get_logger
 from app.logging.logging_config import setup_logging
@@ -352,3 +353,6 @@ app.include_router(
 # This is registered after every route so the transport authority policy can
 # resolve FastAPI path templates and keep OpenAPI in exact agreement.
 install_api_security(app)
+
+# Mounted infrastructure is intentionally not an APIRoute business operation.
+app.mount("/operator", operator_console)

@@ -1,7 +1,11 @@
+import re
 from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+HTTP_TOKEN_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
 # Resolve the backend directory from this file:
@@ -22,6 +26,9 @@ class Settings(BaseSettings):
     # Empty or unsafe credentials leave protected API operations fail-closed.
     OPERATOR_API_TOKEN: str = ""
     SERVICE_API_TOKEN: str = ""
+    OPERATOR_SESSION_TTL_SECONDS: int = 3600
+    OPERATOR_SESSION_COOKIE_NAME: str = "etm_operator_session"
+    OPERATOR_SESSION_COOKIE_SECURE: bool = True
 
     OPENAI_API_KEY: str = ""
     OPENAI_DEFAULT_MODEL: str = "gpt-5.5"
@@ -57,6 +64,17 @@ class Settings(BaseSettings):
             return "API bearer credentials do not meet the minimum length"
         if operator_token == service_token:
             return "API bearer credentials must be distinct"
+        return None
+
+    def operator_session_configuration_error(self) -> str | None:
+        """Return a safe browser-session configuration error."""
+        if not 300 <= self.OPERATOR_SESSION_TTL_SECONDS <= 28800:
+            return "operator session TTL is outside the permitted range"
+        name = self.OPERATOR_SESSION_COOKIE_NAME
+        if not HTTP_TOKEN_RE.fullmatch(name):
+            return "operator session cookie name is invalid"
+        if self.ENV.lower() in {"production", "prod"} and not self.OPERATOR_SESSION_COOKIE_SECURE:
+            return "production operator sessions require secure cookies"
         return None
 
 

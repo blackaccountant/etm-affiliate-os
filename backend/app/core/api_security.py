@@ -16,6 +16,7 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import Match
 
 from app.core.config import Settings, settings
+from app.core.operator_session import operator_session_registry
 
 
 class Authority(StrEnum):
@@ -143,11 +144,25 @@ class ApiSecurityMiddleware(BaseHTTPMiddleware):
         if authority is None or authority is Authority.PUBLIC:
             return await call_next(request)
 
-        identity = _identity_from_header(request.headers.get("authorization"), self.configured)
+        authorization = request.headers.get("authorization")
+        session_token = None
+        session_authenticated = False
+        if authorization is not None:
+            identity = _identity_from_header(authorization, self.configured)
+        else:
+            session_token = request.cookies.get(self.configured.OPERATOR_SESSION_COOKIE_NAME)
+            session = None
+            if self.configured.operator_session_configuration_error() is None:
+                session = operator_session_registry.validate(session_token)
+            identity = Authority.OPERATOR if session is not None else None
+            session_authenticated = session is not None
         if identity is None:
             return _authentication_failure()
         if not is_authorized(identity, authority):
             return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+        if session_authenticated and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if not operator_session_registry.validate_csrf(session_token, request.headers.get("x-csrf-token")):
+                return JSONResponse(status_code=403, content={"detail": "Forbidden"})
         return await call_next(request)
 
 
