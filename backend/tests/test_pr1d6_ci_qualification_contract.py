@@ -12,6 +12,8 @@ from yaml.resolver import BaseResolver
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "pr1d6-production-qualification.yml"
 RUNNER = REPOSITORY_ROOT / "backend" / "scripts" / "qualify_pr1d6_ci.py"
+CI_REQUIREMENTS = REPOSITORY_ROOT / "backend" / "Requirements-ci.txt"
+RUNTIME_REQUIREMENTS = REPOSITORY_ROOT / "backend" / "Requirements.txt"
 BASELINE_BRANCH = "pr1-production-readiness-baseline"
 SAFE_TEST_FILES = (
     "backend/tests/test_production_readiness.py",
@@ -92,6 +94,15 @@ def _list_strings(node):
 
 
 def test_pr1d6_ci_workflow_and_runner_preserve_the_no_service_contract():
+    assert CI_REQUIREMENTS.is_file(), f"missing PR1D6 artifact: {CI_REQUIREMENTS}"
+    ci_requirements = [
+        line.strip()
+        for line in CI_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert ci_requirements == ["-r Requirements.txt", "PyYAML==6.0.3"]
+    assert all("pyyaml" not in line.lower() for line in RUNTIME_REQUIREMENTS.read_text(encoding="utf-8").splitlines())
+
     workflow = _workflow()
     assert isinstance(workflow, dict)
     assert workflow["name"] == "PR1D6 Production Qualification"
@@ -118,7 +129,7 @@ def test_pr1d6_ci_workflow_and_runner_preserve_the_no_service_contract():
         {"uses": "actions/checkout@v4"},
         {"uses": "actions/setup-python@v5", "with": {"python-version": "3.11"}},
         {"run": "python -m pip install --upgrade pip"},
-        {"run": "python -m pip install -r backend/Requirements.txt"},
+        {"run": "python -m pip install -r backend/Requirements-ci.txt"},
         {"run": "python backend/scripts/qualify_pr1d6_ci.py"},
         {
             "if": "always()",

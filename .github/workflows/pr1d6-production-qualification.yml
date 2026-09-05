@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -r backend/Requirements.txt
+      - run: python -m pip install -r backend/Requirements-ci.txt
       - run: python backend/scripts/qualify_pr1d6_ci.py
       - if: always()
         uses: actions/upload-artifact@v4
