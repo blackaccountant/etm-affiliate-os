@@ -48,6 +48,7 @@ _OPERATOR_OPERATIONS = frozenset({
     ("POST", "/publisher/publish/{queue_id}"),
 })
 _SERVICE_OPERATIONS = frozenset({
+    ("GET", "/metrics"),
     ("POST", "/content/generation-runs/{content_generation_run_id}/launch"),
     ("POST", "/content/repurposing-runs/{content_repurposing_run_id}/launch"),
     ("POST", "/discovery/runs/{run_id}/execute"),

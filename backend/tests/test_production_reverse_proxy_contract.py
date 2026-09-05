@@ -45,6 +45,9 @@ def test_caddyfile_uses_exactly_one_external_domain_site_and_frozen_loopback_ups
     assert _top_level_site_addresses(caddyfile) == ["{$ETM_AFFILIATE_OS_DOMAIN}"]
     assert caddyfile.count("reverse_proxy") == 1
     assert re.search(r"^\s*reverse_proxy 127\.0\.0\.1:8000\s*$", caddyfile, flags=re.MULTILINE)
+    assert re.search(r"^\s*handle /metrics\s*\{\s*$", caddyfile, flags=re.MULTILINE)
+    assert re.search(r'^\s*respond "Not Found" 404\s*$', caddyfile, flags=re.MULTILINE)
+    assert caddyfile.index("handle /metrics") < caddyfile.index("reverse_proxy 127.0.0.1:8000")
     assert "0.0.0.0" not in caddyfile
     assert "localhost" not in caddyfile.lower()
     assert "http://" not in caddyfile.lower()

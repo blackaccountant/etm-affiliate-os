@@ -7,5 +7,11 @@
         X-Frame-Options "DENY"
     }
 
-    reverse_proxy 127.0.0.1:8000
+    handle /metrics {
+        respond "Not Found" 404
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8000
+    }
 }

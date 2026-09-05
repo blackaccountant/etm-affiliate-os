@@ -33,11 +33,11 @@ def _scope(method, path):
 
 def test_exact_authority_inventory_and_public_boundary():
     inventory = authority_inventory(app)
-    assert sum(inventory.values()) == 70
+    assert sum(inventory.values()) == 71
     assert inventory == {
         Authority.PUBLIC: 4,
         Authority.OPERATOR: 11,
-        Authority.SERVICE: 8,
+        Authority.SERVICE: 9,
         Authority.DUAL: 47,
     }
     public = {
@@ -58,6 +58,7 @@ def test_parameterized_public_boundary_and_unknown_paths_are_not_public():
     assert resolve_authority(app, _scope("GET", "/")) is Authority.PUBLIC
     assert resolve_authority(app, _scope("GET", "/health")) is Authority.PUBLIC
     assert resolve_authority(app, _scope("GET", "/ready")) is Authority.PUBLIC
+    assert resolve_authority(app, _scope("GET", "/metrics")) is Authority.SERVICE
     assert resolve_authority(app, _scope("GET", "/affiliate-links/go/abc")) is Authority.PUBLIC
     assert resolve_authority(app, _scope("GET", "/affiliate-links/abc")) is Authority.DUAL
     assert resolve_authority(app, _scope("GET", "/not-a-registered-path")) is None
@@ -105,6 +106,7 @@ def test_public_runtime_and_cors_preflight_are_not_blocked(monkeypatch):
     client = _client(monkeypatch)
     assert client.get("/health").status_code == 200
     assert client.get("/ready").status_code == 200
+    assert client.get("/metrics").status_code == 401
     assert client.get("/products/").status_code == 401
     response = client.options(
         "/products/",
@@ -130,4 +132,4 @@ def test_openapi_matches_runtime_authority_policy():
             else:
                 protected_count += 1
                 assert operation["security"] == [{"BearerAuth": []}]
-    assert (public_count, protected_count) == (4, 66)
+    assert (public_count, protected_count) == (4, 67)

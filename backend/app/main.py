@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
+from time import perf_counter
 
 
 from app.api.ai import router as ai_router
@@ -25,6 +27,7 @@ from app.operator_console import operator_console
 from app.exceptions.handlers import register_exception_handlers
 from app.logging.logger import get_logger, request_completion_middleware
 from app.logging.logging_config import setup_logging
+from app.monitoring import METRICS_CONTENT_TYPE, metrics_registry, resolved_route_template
 
 from app.api.publisher import router as publisher_router
 from app.api.affiliate_links import router as affiliate_links_router
@@ -174,6 +177,27 @@ async def production_request_logging(request, call_next):
     return await request_completion_middleware(request, call_next, logger)
 
 
+@app.middleware("http")
+async def production_request_metrics(request, call_next):
+    """Measure completed requests without changing application response behavior."""
+    started = perf_counter()
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        if request.scope.get("path") != "/metrics":
+            try:
+                metrics_registry.record_http_request(
+                    request.method,
+                    resolved_route_template(request),
+                    response.status_code if response is not None else 500,
+                    perf_counter() - started,
+                )
+            except Exception:
+                logger.warning("metrics bookkeeping failed")
+
+
 # -----------------------------------------------------
 # CORS
 # -----------------------------------------------------
@@ -266,6 +290,19 @@ def ready():
         status_code=200,
         content={"success": True, "status": "ready"},
         headers=headers,
+    )
+
+
+@app.get(
+    "/metrics",
+    tags=["System"],
+)
+def metrics():
+    from app.system.routes import runtime
+
+    return Response(
+        content=metrics_registry.render(retry_manager_running=runtime.retry_manager_running()),
+        headers={"Content-Type": METRICS_CONTENT_TYPE},
     )
 
 

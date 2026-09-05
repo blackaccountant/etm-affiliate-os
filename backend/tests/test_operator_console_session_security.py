@@ -84,11 +84,11 @@ def _login(client):
 
 def test_frozen_api_inventory_and_operator_mount_boundary():
     routes = [route for route in app.routes if isinstance(route, APIRoute)]
-    assert len(routes) == 70
+    assert len(routes) == 71
     assert authority_inventory(app) == {
         Authority.PUBLIC: 4,
         Authority.OPERATOR: 11,
-        Authority.SERVICE: 8,
+        Authority.SERVICE: 9,
         Authority.DUAL: 47,
     }
     assert all(not route.path.startswith("/operator/") for route in routes)
