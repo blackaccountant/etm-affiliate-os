@@ -64,3 +64,15 @@ from app.models.cold_delivery import (
     ColdT3Decision, ColdDispatchReservation, ColdProviderDispatch, ColdProviderDispatchReference, ColdProviderFeedbackReceipt,
 )
 from app.models.attribution import AttributionPublication, AttributionContext, AttributionClick, AttributionFact
+from app.models.affiliate_cost_event import AffiliateCostEvent
+from app.models.affiliate_cost_allocation import (
+    AffiliateCostAllocationBatch,
+    AffiliateCostAllocationLine,
+)
+from app.models.affiliate_global_cost_allocation import (
+    AffiliateGlobalCostAllocationBatch,
+    AffiliateGlobalCostAllocationLine,
+)
+from app.models.affiliate_financial_adjustment import AffiliateFinancialAdjustment
+from app.models.attribution_earning_link import AttributionEarningLink
+from app.models.attribution_payout_settlement_link import AttributionPayoutSettlementLink
