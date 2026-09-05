@@ -37,4 +37,6 @@ cd "$REPOSITORY_ROOT/backend"
 exec "$PYTHON" -m uvicorn app.main:app \
     --host 127.0.0.1 \
     --port "$PORT" \
-    --workers 1
+    --workers 1 \
+    --proxy-headers \
+    --forwarded-allow-ips 127.0.0.1
