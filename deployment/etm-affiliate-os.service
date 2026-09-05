@@ -1,0 +1,19 @@
+[Unit]
+Description=ETM Affiliate OS
+After=network.target
+
+[Service]
+Type=simple
+User=etm-affiliate
+Group=etm-affiliate
+WorkingDirectory=/opt/etm-affiliate-os
+EnvironmentFile=/etc/etm-affiliate-os/etm-affiliate-os.env
+ExecStart=/opt/etm-affiliate-os/deployment/start-production.sh
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
