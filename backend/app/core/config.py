@@ -18,6 +18,11 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
 
+    # These opaque credentials are deliberately supplied only through settings.
+    # Empty or unsafe credentials leave protected API operations fail-closed.
+    OPERATOR_API_TOKEN: str = ""
+    SERVICE_API_TOKEN: str = ""
+
     OPENAI_API_KEY: str = ""
     OPENAI_DEFAULT_MODEL: str = "gpt-5.5"
 
@@ -40,6 +45,19 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    def api_security_configuration_error(self) -> str | None:
+        """Return a safe configuration error without exposing credential values."""
+        operator_token = self.OPERATOR_API_TOKEN
+        service_token = self.SERVICE_API_TOKEN
+
+        if not operator_token or not service_token:
+            return "API bearer credentials are not configured"
+        if len(operator_token) < 32 or len(service_token) < 32:
+            return "API bearer credentials do not meet the minimum length"
+        if operator_token == service_token:
+            return "API bearer credentials must be distinct"
+        return None
 
 
 settings = Settings()
