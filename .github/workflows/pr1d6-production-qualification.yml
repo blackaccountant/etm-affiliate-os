@@ -1,0 +1,35 @@
+name: PR1D6 Production Qualification
+
+on:
+  pull_request:
+    branches:
+      - pr1-production-readiness-baseline
+  push:
+    branches:
+      - pr1-production-readiness-baseline
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr1d6-production-qualification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r backend/Requirements.txt
+      - run: python backend/scripts/qualify_pr1d6_ci.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr1d6-qualification-evidence
+          path: backend/.qualification-evidence/pr1d6/
+          if-no-files-found: error
