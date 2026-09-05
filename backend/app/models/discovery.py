@@ -24,13 +24,19 @@ JsonValue = JSON()
 
 class DiscoveryRun(Base):
     __tablename__ = "discovery_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_discovery_runs_idempotency_key",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     input_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     input_value: Mapped[str] = mapped_column(Text, nullable=False)
     input_data: Mapped[object | None] = mapped_column(JsonValue, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
-    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     verified_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     selected_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

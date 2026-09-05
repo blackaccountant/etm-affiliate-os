@@ -12,6 +12,7 @@ from sqlalchemy import (
     Numeric,
     String,
     DateTime,
+    ForeignKey,
 )
 
 from app.database.base import Base
@@ -31,6 +32,7 @@ class AffiliatePayout(Base):
 
     affiliate_program_id = Column(
         Integer,
+        ForeignKey("affiliate_programs.id"),
         nullable=False,
         index=True,
     )

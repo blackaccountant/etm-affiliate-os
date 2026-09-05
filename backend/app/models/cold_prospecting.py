@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, ForeignKey, ForeignKeyConstraint, Index, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -22,6 +22,7 @@ class ColdProspectingOrganizationEvidence(Base):
     __tablename__ = "cold_prospecting_organization_evidence"
     __table_args__ = (
         UniqueConstraint("source_namespace", "source_event_key", name="uq_cold_org_evidence_source"),
+        UniqueConstraint("id", "lead_id", name="uq_cold_org_evidence_id_lead"),
         CheckConstraint("length(trim(source_namespace)) > 0 AND length(source_namespace) <= 100", name="ck_cold_org_evidence_namespace"),
         CheckConstraint("length(trim(source_event_key)) > 0 AND length(source_event_key) <= 512", name="ck_cold_org_evidence_source_key"),
         CheckConstraint("length(trim(evidence_reference)) > 0 AND length(evidence_reference) <= 512", name="ck_cold_org_evidence_reference"),
@@ -48,6 +49,23 @@ class ColdProspectingAuthorization(Base):
     __tablename__ = "cold_prospecting_authorizations"
     __table_args__ = (
         UniqueConstraint("source_namespace", "source_event_key", name="uq_cold_authorizations_source"),
+        UniqueConstraint("id", "lead_id", "contact_point_id", name="uq_cold_authorizations_id_lead_contact"),
+        ForeignKeyConstraint(
+            ["organization_evidence_id", "lead_id"],
+            [
+                "cold_prospecting_organization_evidence.id",
+                "cold_prospecting_organization_evidence.lead_id",
+            ],
+            name="fk_cold_authorizations_org_owner",
+        ),
+        ForeignKeyConstraint(
+            ["policy_selection_id", "lead_id"],
+            [
+                "cold_prospecting_policy_selections.id",
+                "cold_prospecting_policy_selections.lead_id",
+            ],
+            name="fk_cold_authorizations_policy_owner",
+        ),
         CheckConstraint("channel = 'EMAIL'", name="ck_cold_authorizations_email"),
         CheckConstraint("purpose_key LIKE 'cold_b2b:%'", name="ck_cold_authorizations_purpose"),
         CheckConstraint("requested_action IN ('INITIAL','FOLLOW_UP')", name="ck_cold_authorizations_action"),

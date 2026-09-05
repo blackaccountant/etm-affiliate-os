@@ -172,7 +172,12 @@ class AudienceSignal(Base):
 
 class AudienceSignalEvidence(Base):
     __tablename__ = "audience_signal_evidence"
-    __table_args__ = (UniqueConstraint("signal_id", "evidence_id", name="uq_audience_signal_evidence_pair"), Index("ix_audience_signal_evidence_evidence_id", "evidence_id"))
+    __table_args__ = (
+        Index(
+            "ix_audience_signal_evidence_evidence_id",
+            "evidence_id",
+        ),
+    )
     signal_id: Mapped[str] = mapped_column(ForeignKey("audience_signals.id"), primary_key=True)
     evidence_id: Mapped[str] = mapped_column(ForeignKey("audience_evidence.id"), primary_key=True)
     signal = relationship("AudienceSignal", back_populates="evidence_links")

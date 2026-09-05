@@ -29,7 +29,7 @@ class ContentGenerationRun(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     content_brief_id: Mapped[str] = mapped_column(ForeignKey("content_briefs.id"), nullable=False, index=True)
-    idempotency_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)

@@ -44,7 +44,7 @@ class ContentBrief(Base):
     proof_points: Mapped[object | None] = mapped_column(JSON, nullable=True)
     target_keywords: Mapped[object | None] = mapped_column(JSON, nullable=True)
     constraints: Mapped[object | None] = mapped_column(JSON, nullable=True)
-    idempotency_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="CREATED", index=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, default=utc_now)
