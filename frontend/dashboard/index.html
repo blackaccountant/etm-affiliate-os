@@ -7,7 +7,10 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="app-shell">
+  <section class="auth-gate" id="auth-gate" aria-live="polite">
+    <div class="auth-card"><p>Checking operator session…</p></div>
+  </section>
+  <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar" id="sidebar">
       <div class="brand">
         <div class="brand-mark">ETM</div>
@@ -51,8 +54,10 @@
           <div><p class="eyebrow">ETM AFFILIATE OS</p><h2 id="page-title">Overview</h2></div>
         </div>
         <div class="top-actions">
+          <div class="session-meta" id="session-meta"><span>Operator session</span><small id="session-expiry"></small></div>
           <div class="connection-pill"><span class="dot" id="top-dot"></span><span id="connection-text">Connecting</span></div>
           <button class="icon-button" id="refresh-button" title="Refresh">↻</button>
+          <button class="secondary sign-out-button" id="sign-out-button" type="button">Sign out</button>
         </div>
       </header>
 

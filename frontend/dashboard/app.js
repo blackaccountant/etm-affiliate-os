@@ -1,5 +1,5 @@
-const API_URL="http://127.0.0.1:8000";
 const state={
+  auth:{status:"checking",authority:null,expiresAt:null,csrfToken:null,error:null},
   backendOnline:false,
   health:null,
   dashboard:null,
@@ -58,9 +58,71 @@ const state={
 };
 const viewMeta={overview:"Overview",offers:"Products & Offers",opportunities:"Opportunities",audience:"Audience",content:"Content Assets",distribution:"Distribution",attribution:"Attribution",commissions:"Commissions & Payouts",performance:"Economic Performance",recommendations:"Recommendations",approvals:"Approval Queue",experiments:"Experiments",agents:"AI Agents",activity:"Activity"};
 
+function clearProtectedData(){
+  state.backendOnline=false;state.health=null;state.dashboard=null;state.workers=[];state.events=[];state.products=[];
+  state.opportunities={status:"idle",runs:[],error:null,selectedRunId:null,detailStatus:"idle",candidates:[],ranking:[],selected:[],evidence:{},evidenceStatus:{}};
+  state.audience={status:"idle",profiles:[],signals:[],qualifications:[],segments:[],segmentRevisions:[],memberships:[],error:null};
+  state.attribution={status:"idle",publications:[],contexts:[],clicks:[],facts:[],earningLinks:[],settlementLinks:[],error:null};
+  state.performance={status:"idle",rows:[],error:null};state.contentOps={status:"idle",briefs:[],generationRuns:[],artifacts:[],evaluations:[],repurposingRuns:[],error:null};
+  state.distribution={status:"idle",queue:[],error:null};state.commissions={earningsStatus:"idle",payoutsStatus:"idle",earnings:[],payouts:[]};
+  state.recommendations={status:"idle",rows:[],error:null,request:null};
+  state.approvals={status:"idle",outcome:null,error:null,request:null,form:{decisionState:"",selected:[],actorReference:"",decisionReference:"",decidedAt:"",policyVersion:""}};
+  state.experiments=emptyExperimentState();
+}
+function clearAuth(message=null){state.auth={status:"anonymous",authority:null,expiresAt:null,csrfToken:null,error:message};clearProtectedData();renderAuthState()}
+function sessionPayloadIsValid(payload){return Boolean(payload&&payload.authenticated===true&&payload.authority==="OPERATOR"&&typeof payload.csrf_token==="string"&&payload.csrf_token&&typeof payload.expires_at==="string"&&payload.expires_at)}
+function renderAuthState(){
+  const gate=document.getElementById("auth-gate");const shell=document.getElementById("app-shell");
+  if(state.auth.status==="authenticated"){
+    gate.hidden=true;shell.hidden=false;
+    document.getElementById("session-expiry").textContent=`Expires ${time(state.auth.expiresAt)}`;
+    return;
+  }
+  shell.hidden=true;gate.hidden=false;
+  if(state.auth.status==="checking"){gate.innerHTML=`<div class="auth-card"><div class="spinner"></div><h2>Checking operator session…</h2><p>Secured console access is being verified.</p></div>`;return}
+  gate.innerHTML=`<div class="auth-card"><div class="brand-mark">ETM</div><p class="eyebrow">ETM AFFILIATE OS</p><h1>Operator Console</h1><p>Sign in with your operator credential to access the secured console.</p>${state.auth.error?`<div class="auth-error">${esc(state.auth.error)}</div>`:""}<form id="login-form" class="login-form"><label class="field"><span>Operator credential</span><input id="operator-credential" type="password" autocomplete="off" spellcheck="false" required></label><button class="primary" id="login-button" type="submit">Sign in</button></form></div>`;
+  document.getElementById("login-form").onsubmit=login;
+}
+async function requestApi(endpoint,options={}){
+  if(state.auth.status!=="authenticated")return null;
+  const method=(options.method||"GET").toUpperCase();const headers=new Headers(options.headers||{});
+  if(["POST","PUT","PATCH","DELETE"].includes(method)){
+    if(!state.auth.csrfToken){clearAuth("Your operator session has expired. Sign in again.");return null}
+    headers.set("X-CSRF-Token",state.auth.csrfToken);
+  }
+  try{
+    const response=await fetch(endpoint,{...options,headers,credentials:"same-origin",cache:"no-store"});
+    if(response.status===401){clearAuth("Your operator session has expired. Sign in again.");return response}
+    if(response.status===403)toast("Your operator session is not authorized for that action.");
+    return response;
+  }catch(_error){return null}
+}
 async function api(endpoint,options={}){
-  try{const response=await fetch(`${API_URL}${endpoint}`,{cache:"no-store",...options});if(!response.ok)throw new Error(`${response.status} ${response.statusText}`);return await response.json()}
-  catch(error){console.error(`API error ${endpoint}:`,error);return null}
+  const response=await requestApi(endpoint,options);
+  if(!response||!response.ok)return null;
+  return response.json().catch(()=>null);
+}
+async function bootstrapSession(){
+  state.auth={status:"checking",authority:null,expiresAt:null,csrfToken:null,error:null};renderAuthState();
+  try{
+    const response=await fetch("/operator/session",{credentials:"same-origin",cache:"no-store"});
+    if(response.status===200){const payload=await response.json().catch(()=>null);if(sessionPayloadIsValid(payload)){state.auth={status:"authenticated",authority:"OPERATOR",expiresAt:payload.expires_at,csrfToken:payload.csrf_token,error:null};renderAuthState();await refreshData({silent:true});return}}
+  }catch(_error){}
+  clearAuth(null);
+}
+async function login(event){
+  event.preventDefault();const input=document.getElementById("operator-credential");const button=document.getElementById("login-button");const credential=input?.value||"";
+  if(!credential)return;
+  button.disabled=true;button.textContent="Signing in…";state.auth.error=null;document.querySelector(".auth-error")?.remove();
+  let response=null;
+  try{response=await fetch("/operator/session/login",{method:"POST",headers:{Authorization:`Bearer ${credential}`},credentials:"same-origin",cache:"no-store"})}catch(_error){}finally{if(input)input.value=""}
+  if(response?.status===200){const payload=await response.json().catch(()=>null);if(sessionPayloadIsValid(payload)){state.auth={status:"authenticated",authority:"OPERATOR",expiresAt:payload.expires_at,csrfToken:payload.csrf_token,error:null};renderAuthState();await refreshData();return}}
+  clearAuth(response?.status===403?"Credential is not authorized for the operator console.":"Invalid operator credential.");
+}
+async function logout(){
+  const csrfToken=state.auth.csrfToken;
+  try{await fetch("/operator/session/logout",{method:"POST",headers:{"X-CSRF-Token":csrfToken||""},credentials:"same-origin",cache:"no-store"})}catch(_error){}
+  clearAuth(null);
 }
 function esc(v){return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;")}
 function toast(message){const el=document.getElementById("toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),2400)}
@@ -71,6 +133,7 @@ function eventClass(type){const t=String(type||"INFO").toUpperCase();return t===
 function time(value){if(!value)return"--:--";const d=new Date(value);return Number.isNaN(d.getTime())?"--:--":d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
 
 async function refreshData({silent=false}={}){
+  if(state.auth.status!=="authenticated"){renderAuthState();return}
   const [
     health,
     dashboard,
@@ -166,7 +229,7 @@ async function refreshData({silent=false}={}){
   };
 
   setBackendStatus(Boolean(health?.success));
-  document.getElementById("sidebar-version").textContent=health?.success?"FastAPI connected":"127.0.0.1:8000";
+  document.getElementById("sidebar-version").textContent=health?.success?"FastAPI connected":"Backend unavailable";
 
   if(!["recommendations","approvals","experiments"].includes(state.activeView))render();
   if(!silent)toast(health?.success?"Live data refreshed.":"Backend is not reachable.");
@@ -735,13 +798,14 @@ async function projectExperimentDesigns(){
   renderExperimentOutput();
 
   try{
-    const response=await fetch(`${API_URL}/optimization/experiment-designs/project`,{
+    const response=await requestApi("/optimization/experiment-designs/project",{
       method:"POST",
       cache:"no-store",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(payload)
     });
 
+    if(!response||response.status===401)return;
     const body=await response.json().catch(()=>null);
 
     if(!response.ok){
@@ -1188,7 +1252,7 @@ function commissions(){
   </div>`;
 }
 
-function agents(){return `<div class="section-stack"><div><h3 class="section-title">AI Agents</h3><p class="section-copy">Live workforce plus existing discovery mission controls.</p></div><section class="card"><div class="card-head"><div><h4>Runtime Workers</h4><p>Shared workforce registry</p></div><span class="state-badge">${state.workers.length} workers</span></div><div class="card-body">${workers(30)}</div></section><section class="card"><div class="card-head"><div><h4>Mission Controls</h4><p>Existing system commands</p></div></div><div class="card-body"><div class="toolbar"><button class="primary" data-action="product-discovery">Launch Product Discovery</button><button class="secondary" data-action="affiliate-discovery">Launch Affiliate Discovery</button></div></div></section></div>`}
+function agents(){return `<div class="section-stack"><div><h3 class="section-title">AI Agents</h3><p class="section-copy">Read-only visibility into the registered workforce.</p></div><section class="card"><div class="card-head"><div><h4>Runtime Workers</h4><p>Shared workforce registry</p></div><span class="state-badge">${state.workers.length} workers</span></div><div class="card-body">${workers(30)}</div></section><section class="card"><div class="card-head"><div><h4>Service Execution</h4><p>Restricted automation boundary</p></div></div><div class="card-body"><div class="callout">Service execution is restricted to authenticated automation workers.</div></div></section></div>`}
 function activity(){return `<div class="section-stack"><div><h3 class="section-title">Activity</h3><p class="section-copy">Latest runtime events from /system/events.</p></div><section class="card"><div class="card-body">${events(50)}</div></section></div>`}
 
 function utcInputValue(){const now=new Date();const localOffset=now.getTimezoneOffset()*60000;return new Date(now.getTime()-localOffset).toISOString().slice(0,16)}
@@ -1270,7 +1334,8 @@ async function projectRecommendations(){
   state.experiments=emptyExperimentState();
   state.recommendations={status:"loading",rows:[],error:null,request:payload};renderRecommendationOutput();
   try{
-    const response=await fetch(`${API_URL}/optimization/recommendations/project`,{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const response=await requestApi("/optimization/recommendations/project",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    if(!response||response.status===401)return;
     const body=await response.json().catch(()=>null);
     if(!response.ok){state.recommendations={status:"error",rows:[],error:typeof body?.detail==="string"?body.detail:`Projection failed with HTTP ${response.status}.`,request:payload};renderRecommendationOutput();return}
     state.recommendations={status:"success",rows:Array.isArray(body?.recommendations)?body.recommendations:[],error:null,request:payload};renderRecommendationOutput();
@@ -1364,13 +1429,14 @@ async function projectApprovalDecision(){
   renderApprovalOutput();
 
   try{
-    const response=await fetch(`${API_URL}/optimization/approvals/decide`,{
+    const response=await requestApi("/optimization/approvals/decide",{
       method:"POST",
       cache:"no-store",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(payload)
     });
 
+    if(!response||response.status===401)return;
     const body=await response.json().catch(()=>null);
 
     if(!response.ok){
@@ -1397,15 +1463,12 @@ async function projectApprovalDecision(){
 
 const renderers={overview,offers,opportunities,audience:audienceIntelligence,content:contentOperations,distribution,attribution:attributionLineage,commissions,performance:economicPerformance,recommendations,approvals,experiments,agents,activity};
 
-function render(){document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
-function activate(view){state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}
-async function postCommand(endpoint,label){toast(`${label} requested…`);const r=await api(endpoint,{method:"POST"});toast(r?.message||`${label} failed. Check FastAPI console.`);if(r)await refreshData({silent:true})}
+function render(){if(state.auth.status!=="authenticated")return;document.getElementById("page-title").textContent=viewMeta[state.activeView]||"Overview";document.getElementById("view-container").innerHTML=(renderers[state.activeView]||overview)();bindActions()}
+function activate(view){if(state.auth.status!=="authenticated")return;state.activeView=view;document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.view===view));document.getElementById("sidebar").classList.remove("open");if(view==="approvals"&&!state.approvals.form.decidedAt)state.approvals.form.decidedAt=utcInputValue();render();if(view==="recommendations"){const input=document.getElementById("rec-evaluated-at");if(input&&!input.value)input.value=utcInputValue()}}
 function bindActions(){
   document.querySelectorAll("[data-action]").forEach(b=>b.onclick=async()=>{
     const a=b.dataset.action;
     if(a==="activity")activate("activity");
-    if(a==="product-discovery")await postCommand("/system/command/run-product-discovery","Product discovery");
-    if(a==="affiliate-discovery")await postCommand("/system/command/run-affiliate","Affiliate discovery");
     if(a==="opportunity-run")await loadOpportunityRun(b.dataset.runId);
     if(a==="opportunity-evidence")await loadOpportunityEvidence(b.dataset.candidateId);
     if(a==="go-recommendations")activate("recommendations");
@@ -1491,4 +1554,4 @@ function bindActions(){
     });
   }
 }
-document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll(".nav-item").forEach(b=>b.onclick=()=>activate(b.dataset.view));document.getElementById("refresh-button").onclick=()=>refreshData();document.getElementById("menu-button").onclick=()=>document.getElementById("sidebar").classList.toggle("open");refreshData({silent:true});setInterval(()=>refreshData({silent:true}),8000)});
+document.addEventListener("DOMContentLoaded",()=>{document.querySelectorAll(".nav-item").forEach(b=>b.onclick=()=>activate(b.dataset.view));document.getElementById("refresh-button").onclick=()=>refreshData();document.getElementById("sign-out-button").onclick=logout;document.getElementById("menu-button").onclick=()=>document.getElementById("sidebar").classList.toggle("open");bootstrapSession();setInterval(()=>{if(state.auth.status==="authenticated")refreshData({silent:true})},8000)});
