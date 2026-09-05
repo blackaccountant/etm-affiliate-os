@@ -38,5 +38,6 @@ exec "$PYTHON" -m uvicorn app.main:app \
     --host 127.0.0.1 \
     --port "$PORT" \
     --workers 1 \
+    --no-access-log \
     --proxy-headers \
     --forwarded-allow-ips 127.0.0.1

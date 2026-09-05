@@ -23,7 +23,7 @@ from app.core.api_security import install_api_security
 from app.database.session import database_is_ready
 from app.operator_console import operator_console
 from app.exceptions.handlers import register_exception_handlers
-from app.logging.logger import get_logger
+from app.logging.logger import get_logger, request_completion_middleware
 from app.logging.logging_config import setup_logging
 
 from app.api.publisher import router as publisher_router
@@ -114,10 +114,7 @@ async def lifespan(
 
     except Exception as exc:
 
-        logger.exception(
-            "Failed to start retry manager: %s",
-            exc,
-        )
+        logger.exception("Failed to start retry manager")
 
         raise
 
@@ -152,10 +149,7 @@ async def lifespan(
 
         except Exception as exc:
 
-            logger.exception(
-                "Error during ETM Affiliate OS shutdown: %s",
-                exc,
-            )
+            logger.exception("Error during ETM Affiliate OS shutdown")
 
 
 # -----------------------------------------------------
@@ -173,6 +167,11 @@ app = FastAPI(
     lifespan=lifespan,
 
 )
+
+
+@app.middleware("http")
+async def production_request_logging(request, call_next):
+    return await request_completion_middleware(request, call_next, logger)
 
 
 # -----------------------------------------------------
