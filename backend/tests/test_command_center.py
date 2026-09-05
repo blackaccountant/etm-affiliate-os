@@ -5,13 +5,13 @@ from app.models.execution import Execution
 from app.models.mission_record import MissionRecord
 
 
-client = TestClient(app)
+def test_run_affiliate_command(isolated_system_mission_manager, db_session_factory, api_auth_headers):
 
-
-def test_run_affiliate_command(isolated_system_mission_manager, db_session_factory):
+    client = TestClient(app)
 
     response = client.post(
-        "/system/command/run-affiliate"
+        "/system/command/run-affiliate",
+        headers=api_auth_headers["service"],
     )
 
     assert response.status_code == 200
@@ -33,10 +33,13 @@ def test_run_affiliate_command(isolated_system_mission_manager, db_session_facto
         session.close()
 
 
-def test_run_product_discovery_command(isolated_system_mission_manager):
+def test_run_product_discovery_command(isolated_system_mission_manager, api_auth_headers):
+
+    client = TestClient(app)
 
     response = client.post(
-        "/system/command/run-product-discovery"
+        "/system/command/run-product-discovery",
+        headers=api_auth_headers["service"],
     )
 
     assert response.status_code == 200
@@ -51,16 +54,20 @@ def test_run_product_discovery_command(isolated_system_mission_manager):
     )
 
 
-def test_product_discovery_result_reaches_dashboard(isolated_system_mission_manager):
+def test_product_discovery_result_reaches_dashboard(isolated_system_mission_manager, api_auth_headers):
+
+    client = TestClient(app)
 
     command_response = client.post(
-        "/system/command/run-product-discovery"
+        "/system/command/run-product-discovery",
+        headers=api_auth_headers["service"],
     )
 
     assert command_response.status_code == 200
 
     dashboard_response = client.get(
-        "/system/dashboard"
+        "/system/dashboard",
+        headers=api_auth_headers["operator"],
     )
 
     assert dashboard_response.status_code == 200

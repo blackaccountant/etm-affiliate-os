@@ -2,6 +2,8 @@
 Pytest database fixtures for ETM Affiliate OS.
 """
 
+import secrets
+
 import pytest
 
 from sqlalchemy import create_engine
@@ -10,6 +12,20 @@ from sqlalchemy.pool import StaticPool
 
 from app.database.base import Base
 from app import models  # noqa: F401 - registers all persistence models.
+from app.core.config import settings
+
+
+@pytest.fixture
+def api_auth_headers(monkeypatch):
+    """Provide per-test opaque credentials for app.main transport tests."""
+    operator_token = secrets.token_urlsafe(48)
+    service_token = secrets.token_urlsafe(48)
+    monkeypatch.setattr(settings, "OPERATOR_API_TOKEN", operator_token)
+    monkeypatch.setattr(settings, "SERVICE_API_TOKEN", service_token)
+    return {
+        "operator": {"Authorization": f"Bearer {operator_token}"},
+        "service": {"Authorization": f"Bearer {service_token}"},
+    }
 
 
 @pytest.fixture

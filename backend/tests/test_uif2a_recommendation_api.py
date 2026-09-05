@@ -103,12 +103,12 @@ def _clean_overrides(monkeypatch):
     app.dependency_overrides.clear()
 
 
-def _client():
-    return TestClient(app)
+def _client(api_auth_headers):
+    return TestClient(app, headers=api_auth_headers["operator"])
 
 
-def test_route_exists_and_valid_request_maps_exact_frozen_contract():
-    response = _client().post(
+def test_route_exists_and_valid_request_maps_exact_frozen_contract(api_auth_headers):
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=_payload(),
     )
@@ -147,10 +147,10 @@ def test_route_exists_and_valid_request_maps_exact_frozen_contract():
         lambda p: p.update({"unexpected": True}),
     ],
 )
-def test_strict_http_validation_returns_422(mutator):
+def test_strict_http_validation_returns_422(mutator, api_auth_headers):
     payload = _payload()
     mutator(payload)
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=payload,
     )
@@ -158,9 +158,9 @@ def test_strict_http_validation_returns_422(mutator):
     assert _CapturedService.calls == 0
 
 
-def test_one_row_serializes_complete_13_field_m11a8_provenance():
+def test_one_row_serializes_complete_13_field_m11a8_provenance(api_auth_headers):
     _CapturedService.rows = (_row(),)
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=_payload(),
     )
@@ -214,12 +214,12 @@ def test_one_row_serializes_complete_13_field_m11a8_provenance():
     assert forbidden.isdisjoint(row.keys())
 
 
-def test_exact_ties_preserve_every_row_and_source_order():
+def test_exact_ties_preserve_every_row_and_source_order(api_auth_headers):
     _CapturedService.rows = (
         _row(7, "500.00"),
         _row(9, "500.00"),
     )
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=_payload(),
     )
@@ -233,9 +233,9 @@ def test_exact_ties_preserve_every_row_and_source_order():
     assert _CapturedService.calls == 1
 
 
-def test_domain_normalization_failure_is_safe_422():
+def test_domain_normalization_failure_is_safe_422(api_auth_headers):
     payload = _payload(dimensions=["affiliate_program", "affiliate_program"])
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=payload,
     )
@@ -244,7 +244,7 @@ def test_domain_normalization_failure_is_safe_422():
     assert _CapturedService.calls == 0
 
 
-def test_frozen_service_contradiction_is_safe_400(monkeypatch):
+def test_frozen_service_contradiction_is_safe_400(monkeypatch, api_auth_headers):
     class RejectingService(_CapturedService):
         def project(self, request):
             type(self).calls += 1
@@ -255,7 +255,7 @@ def test_frozen_service_contradiction_is_safe_400(monkeypatch):
         "EconomicRecommendationProposalService",
         RejectingService,
     )
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=_payload(),
     )
@@ -266,10 +266,10 @@ def test_frozen_service_contradiction_is_safe_400(monkeypatch):
     assert "frozen optimization contract" in detail
 
 
-def test_duration_may_be_explicit_null_or_nonnegative_value():
+def test_duration_may_be_explicit_null_or_nonnegative_value(api_auth_headers):
     payload = _payload()
     payload["eligibility_policy"]["maximum_settlement_observation_age"] = "P7D"
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/recommendations/project",
         json=payload,
     )

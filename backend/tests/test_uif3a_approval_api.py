@@ -156,12 +156,12 @@ def _clean_overrides(monkeypatch):
     app.dependency_overrides.clear()
 
 
-def _client():
-    return TestClient(app)
+def _client(api_auth_headers):
+    return TestClient(app, headers=api_auth_headers["operator"])
 
 
-def test_valid_approved_request_maps_exact_frozen_m11a9_contract_once():
-    response = _client().post(
+def test_valid_approved_request_maps_exact_frozen_m11a9_contract_once(api_auth_headers):
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=_payload(),
     )
@@ -198,11 +198,11 @@ def test_valid_approved_request_maps_exact_frozen_m11a9_contract_once():
 
 
 @pytest.mark.parametrize("state", ["REJECTED", "DEFERRED"])
-def test_nonapproval_states_map_explicit_empty_selection(state):
+def test_nonapproval_states_map_explicit_empty_selection(state, api_auth_headers):
     enum_state = EconomicRecommendationApprovalState(state)
     _CapturedService.outcome = _outcome(state=enum_state)
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=_payload(state=state, approved_dimensions=[]),
     )
@@ -232,11 +232,11 @@ def test_nonapproval_states_map_explicit_empty_selection(state):
         lambda p: p.update({"unexpected": True}),
     ],
 )
-def test_strict_http_validation_returns_422_without_service(mutator):
+def test_strict_http_validation_returns_422_without_service(mutator, api_auth_headers):
     payload = _payload()
     mutator(payload)
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=payload,
     )
@@ -257,8 +257,8 @@ def test_strict_http_validation_returns_422_without_service(mutator):
         ),
     ],
 )
-def test_frozen_state_selection_contradictions_are_safe_422(payload):
-    response = _client().post(
+def test_frozen_state_selection_contradictions_are_safe_422(payload, api_auth_headers):
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=deepcopy(payload),
     )
@@ -268,14 +268,14 @@ def test_frozen_state_selection_contradictions_are_safe_422(payload):
     assert _CapturedService.calls == 0
 
 
-def test_proposal_domain_normalization_failure_is_safe_422():
+def test_proposal_domain_normalization_failure_is_safe_422(api_auth_headers):
     payload = _payload()
     payload["proposal_request"]["dimensions"] = [
         "affiliate_program",
         "affiliate_program",
     ]
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=payload,
     )
@@ -285,10 +285,10 @@ def test_proposal_domain_normalization_failure_is_safe_422():
     assert _CapturedService.calls == 0
 
 
-def test_outcome_serializes_exact_13_field_m11a9_transport_and_a8_row():
+def test_outcome_serializes_exact_13_field_m11a9_transport_and_a8_row(api_auth_headers):
     _CapturedService.outcome = _outcome(approved_rows=(_row(),))
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=_payload(),
     )
@@ -361,7 +361,7 @@ def test_outcome_serializes_exact_13_field_m11a9_transport_and_a8_row():
     assert forbidden.isdisjoint(row.keys())
 
 
-def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkeypatch):
+def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkeypatch, api_auth_headers):
     class RejectingService(_CapturedService):
         def project(self, request):
             type(self).calls += 1
@@ -373,7 +373,7 @@ def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkey
         RejectingService,
     )
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/approvals/decide",
         json=_payload(),
     )

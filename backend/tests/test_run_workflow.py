@@ -2,13 +2,13 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-client = TestClient(app)
+def test_run_workflow(api_auth_headers):
 
-
-def test_run_workflow():
+    client = TestClient(app)
 
     response = client.post(
         "/system/run",
+        headers=api_auth_headers["service"],
         json={
             "workflow": "affiliate_discovery",
             "payload": {

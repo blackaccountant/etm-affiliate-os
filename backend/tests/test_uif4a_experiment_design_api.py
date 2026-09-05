@@ -207,12 +207,12 @@ def _clean_overrides(monkeypatch):
     app.dependency_overrides.clear()
 
 
-def _client():
-    return TestClient(app)
+def _client(api_auth_headers):
+    return TestClient(app, headers=api_auth_headers["operator"])
 
 
-def test_valid_request_maps_exact_frozen_m11a10_contract_once():
-    response = _client().post(
+def test_valid_request_maps_exact_frozen_m11a10_contract_once(api_auth_headers):
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=_payload(),
     )
@@ -249,8 +249,8 @@ def test_valid_request_maps_exact_frozen_m11a10_contract_once():
     assert request.experiment_design_policy.policy_version == "experiment-design-v1"
 
 
-def test_approved_request_can_explicitly_project_zero_designs():
-    response = _client().post(
+def test_approved_request_can_explicitly_project_zero_designs(api_auth_headers):
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=_payload(designs=[]),
     )
@@ -261,8 +261,8 @@ def test_approved_request_can_explicitly_project_zero_designs():
 
 
 @pytest.mark.parametrize("state", ["REJECTED", "DEFERRED"])
-def test_nonapproval_states_with_no_designs_remain_explicit_and_empty(state):
-    response = _client().post(
+def test_nonapproval_states_with_no_designs_remain_explicit_and_empty(state, api_auth_headers):
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=_payload(state=state),
     )
@@ -297,11 +297,11 @@ def test_nonapproval_states_with_no_designs_remain_explicit_and_empty(state):
         lambda p: p.pop("experiment_design_inputs"),
     ],
 )
-def test_strict_http_validation_returns_422_without_service(mutator):
+def test_strict_http_validation_returns_422_without_service(mutator, api_auth_headers):
     payload = _payload()
     mutator(payload)
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=payload,
     )
@@ -310,11 +310,11 @@ def test_strict_http_validation_returns_422_without_service(mutator):
     assert _CapturedService.calls == 0
 
 
-def test_nested_approval_contract_contradiction_is_safe_422_before_service():
+def test_nested_approval_contract_contradiction_is_safe_422_before_service(api_auth_headers):
     payload = _payload(designs=[])
     payload["approval_request"]["approval_decision"]["approved_dimensions"] = []
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=payload,
     )
@@ -324,7 +324,7 @@ def test_nested_approval_contract_contradiction_is_safe_422_before_service():
     assert _CapturedService.calls == 0
 
 
-def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkeypatch):
+def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkeypatch, api_auth_headers):
     class RejectingService(_CapturedService):
         def project(self, request):
             type(self).calls += 1
@@ -339,7 +339,7 @@ def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkey
     payload = _payload()
     payload["experiment_design_inputs"][0]["approved_dimensions"][0]["value"] = 99
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=payload,
     )
@@ -351,10 +351,10 @@ def test_frozen_service_contradiction_is_safe_400_without_internal_detail(monkey
     assert "frozen optimization contract" in detail
 
 
-def test_response_serializes_exact_19_field_m11a10_row_and_complete_a8_row():
+def test_response_serializes_exact_19_field_m11a10_row_and_complete_a8_row(api_auth_headers):
     _CapturedService.rows = (_design_row(),)
 
-    response = _client().post(
+    response = _client(api_auth_headers).post(
         "/optimization/experiment-designs/project",
         json=_payload(),
     )
