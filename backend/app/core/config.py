@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     DATABASE_ECHO: bool = False
     DATABASE_POOL_RECYCLE_SECONDS: int = Field(default=1800, ge=60, le=86400)
+    DATABASE_CONNECTION_TIMEOUT_SECONDS: int = Field(default=5, ge=1, le=30)
     CORS_ALLOWED_ORIGINS: str = ""
 
     # These opaque credentials are deliberately supplied only through settings.

@@ -33,9 +33,9 @@ def _scope(method, path):
 
 def test_exact_authority_inventory_and_public_boundary():
     inventory = authority_inventory(app)
-    assert sum(inventory.values()) == 69
+    assert sum(inventory.values()) == 70
     assert inventory == {
-        Authority.PUBLIC: 3,
+        Authority.PUBLIC: 4,
         Authority.OPERATOR: 11,
         Authority.SERVICE: 8,
         Authority.DUAL: 47,
@@ -48,6 +48,7 @@ def test_exact_authority_inventory_and_public_boundary():
     assert public == {
         ("GET", "/"),
         ("GET", "/health"),
+        ("GET", "/ready"),
         ("GET", "/affiliate-links/go/{tracking_code}"),
     }
     assert all(method not in {"POST", "PUT", "PATCH", "DELETE"} for method, _ in public)
@@ -56,6 +57,7 @@ def test_exact_authority_inventory_and_public_boundary():
 def test_parameterized_public_boundary_and_unknown_paths_are_not_public():
     assert resolve_authority(app, _scope("GET", "/")) is Authority.PUBLIC
     assert resolve_authority(app, _scope("GET", "/health")) is Authority.PUBLIC
+    assert resolve_authority(app, _scope("GET", "/ready")) is Authority.PUBLIC
     assert resolve_authority(app, _scope("GET", "/affiliate-links/go/abc")) is Authority.PUBLIC
     assert resolve_authority(app, _scope("GET", "/affiliate-links/abc")) is Authority.DUAL
     assert resolve_authority(app, _scope("GET", "/not-a-registered-path")) is None
@@ -99,8 +101,11 @@ def test_identity_authority_matrix_and_configuration_fail_closed(monkeypatch):
 
 
 def test_public_runtime_and_cors_preflight_are_not_blocked(monkeypatch):
+    monkeypatch.setattr("app.main.database_is_ready", lambda: True)
     client = _client(monkeypatch)
     assert client.get("/health").status_code == 200
+    assert client.get("/ready").status_code == 200
+    assert client.get("/products/").status_code == 401
     response = client.options(
         "/products/",
         headers={"Origin": "http://localhost:5500", "Access-Control-Request-Method": "GET"},
@@ -125,4 +130,4 @@ def test_openapi_matches_runtime_authority_policy():
             else:
                 protected_count += 1
                 assert operation["security"] == [{"BearerAuth": []}]
-    assert (public_count, protected_count) == (3, 66)
+    assert (public_count, protected_count) == (4, 66)

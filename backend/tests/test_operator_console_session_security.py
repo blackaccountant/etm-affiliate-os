@@ -84,9 +84,9 @@ def _login(client):
 
 def test_frozen_api_inventory_and_operator_mount_boundary():
     routes = [route for route in app.routes if isinstance(route, APIRoute)]
-    assert len(routes) == 69
+    assert len(routes) == 70
     assert authority_inventory(app) == {
-        Authority.PUBLIC: 3,
+        Authority.PUBLIC: 4,
         Authority.OPERATOR: 11,
         Authority.SERVICE: 8,
         Authority.DUAL: 47,

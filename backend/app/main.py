@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 
 from app.api.ai import router as ai_router
@@ -19,6 +20,7 @@ from app.system.routes import router as system_router
 
 from app.core.config import settings
 from app.core.api_security import install_api_security
+from app.database.session import database_is_ready
 from app.operator_console import operator_console
 from app.exceptions.handlers import register_exception_handlers
 from app.logging.logger import get_logger
@@ -241,6 +243,31 @@ def health():
         "status": "healthy",
 
     }
+
+
+@app.get(
+    "/ready",
+    tags=["System"],
+)
+def ready():
+    headers = {"Cache-Control": "no-store"}
+    try:
+        ready = database_is_ready()
+    except Exception:
+        ready = False
+
+    if not ready:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "status": "not_ready"},
+            headers=headers,
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={"success": True, "status": "ready"},
+        headers=headers,
+    )
 
 
 # -----------------------------------------------------

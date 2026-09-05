@@ -109,6 +109,41 @@ def test_database_engine_uses_runtime_echo_liveness_and_recycle_settings(monkeyp
     }
 
 
+def test_postgresql_database_engine_uses_bounded_connection_and_pool_timeouts(monkeypatch):
+    from app.database import session
+
+    captured = {}
+    sentinel_engine = object()
+
+    def fake_create_engine(database_url, **kwargs):
+        captured["database_url"] = database_url
+        captured.update(kwargs)
+        return sentinel_engine
+
+    monkeypatch.setattr(session, "create_engine", fake_create_engine)
+    runtime_settings = _settings(
+        DATABASE_URL="postgresql+psycopg2://db-user@127.0.0.1:5432/etm_test",
+        DATABASE_CONNECTION_TIMEOUT_SECONDS=7,
+    )
+
+    assert session.create_database_engine(runtime_settings) is sentinel_engine
+    assert captured == {
+        "database_url": "postgresql+psycopg2://db-user@127.0.0.1:5432/etm_test",
+        "echo": False,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,
+        "connect_args": {"connect_timeout": 7},
+        "pool_timeout": 7,
+    }
+
+
+def test_database_connection_timeout_defaults_to_five_seconds_and_is_bounded():
+    assert _settings().DATABASE_CONNECTION_TIMEOUT_SECONDS == 5
+    for invalid_timeout in (0, 31):
+        with pytest.raises(ValueError):
+            _settings(DATABASE_CONNECTION_TIMEOUT_SECONDS=invalid_timeout)
+
+
 def test_lifespan_fails_before_starting_runtime_for_invalid_production_settings(monkeypatch):
     from app.main import app, lifespan
 

@@ -31,6 +31,7 @@ class Authority(StrEnum):
 _PUBLIC_OPERATIONS = frozenset({
     ("GET", "/"),
     ("GET", "/health"),
+    ("GET", "/ready"),
     ("GET", "/affiliate-links/go/{tracking_code}"),
 })
 _OPERATOR_OPERATIONS = frozenset({
