@@ -78,6 +78,11 @@ async def lifespan(
     # Startup
     # --------------------------------------------------
 
+    configuration_error = settings.production_runtime_configuration_error()
+    if configuration_error:
+        logger.error("Invalid production runtime configuration: %s", configuration_error)
+        raise RuntimeError("invalid production runtime configuration")
+
     logger.info(
         "Starting ETM Affiliate OS..."
     )
@@ -176,17 +181,7 @@ app.add_middleware(
 
     CORSMiddleware,
 
-    allow_origins=[
-
-        "http://127.0.0.1:5500",
-
-        "http://localhost:5500",
-
-        "http://127.0.0.1:8000",
-
-        "http://localhost:8000",
-
-    ],
+    allow_origins=settings.cors_allowed_origins,
 
     allow_credentials=True,
 
