@@ -221,7 +221,7 @@ deferred until a suitable deployment environment is available:
 
 ### PR1D13 — Final Production Readiness Audit and Cutover
 
-- Status: PLANNED — RECON_REQUIRED.
+- Status: COMPLETE - LIVE PRODUCTION CUTOVER PASSED.
 - Objective: reconcile all frozen contracts, operational runbooks, automated
   qualification, backup/restore/DR evidence, observability, request protection,
   and deferred live deployment validations before production cutover.
@@ -232,7 +232,22 @@ deferred until a suitable deployment environment is available:
 - Dependencies: PR1D5 through PR1D12.
 - Frozen-boundary risk: no modification is expected; any discovered defect
   requires a new authorized boundary exception.
-- Database access: only as explicitly authorized for final live validation.
-- Migrations: not expected.
-- Qualification and freeze intent: all predecessor evidence, deployment-owner
-  approvals, and live-validation prerequisites must be complete before cutover.
+- Database access: final live PostgreSQL validation and the initial production
+  migration were separately and explicitly authorized during cutover.
+- Migration result: Alembic production head `9f3c2a7d6b41`.
+- Live production endpoint: `https://api.etm.homes`.
+- Live validation evidence:
+  - public `GET /health` returns HTTP 200;
+  - public `GET /ready` returns HTTP 200;
+  - public `GET /metrics` returns HTTP 404 through Caddy;
+  - HTTP redirects to HTTPS with HTTP 308;
+  - Uvicorn remains bound only to `127.0.0.1:8000`;
+  - Caddy listens on public TCP 80/443;
+  - application, Caddy, and PostgreSQL services are active and enabled;
+  - required production security headers are present;
+  - no failed systemd units were observed;
+  - no recent application or Caddy warning-level log entries were observed;
+  - deployed revision was `844370be4296d05b8b0be13b2d6cd7670e3e628b`;
+  - deployed production worktree was clean at closure.
+- Qualification and freeze result: PR1D13 live-host qualification passed and
+  Production Readiness PR1 is closed.
