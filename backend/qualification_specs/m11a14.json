@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "phase": "M11A14",
+  "expected_branch": "milestone-11-optimization-signals",
+  "expected_base_head": "c198efe9140c5f86ac9dd2aff1817d38c81a0077",
+  "candidate_manifest": [
+    "backend/app/optimization/economic_recommendation_experiment_execution_observation_contracts.py",
+    "backend/app/services/economic_recommendation_experiment_execution_observation_service.py",
+    "backend/tests/test_milestone_11_phase11a14_economic_recommendation_experiment_execution_observation_contracts.py",
+    "backend/tests/test_milestone_11_phase11a14_postgresql_qualification.py",
+    "backend/qualification_specs/m11a14.json"
+  ],
+  "production_files": [
+    "backend/app/optimization/economic_recommendation_experiment_execution_observation_contracts.py",
+    "backend/app/services/economic_recommendation_experiment_execution_observation_service.py"
+  ],
+  "test_files": [
+    "backend/tests/test_milestone_11_phase11a14_economic_recommendation_experiment_execution_observation_contracts.py",
+    "backend/tests/test_milestone_11_phase11a14_postgresql_qualification.py"
+  ],
+  "compile_targets": [
+    "backend/app/optimization/economic_recommendation_experiment_execution_observation_contracts.py",
+    "backend/app/services/economic_recommendation_experiment_execution_observation_service.py",
+    "backend/tests/test_milestone_11_phase11a14_economic_recommendation_experiment_execution_observation_contracts.py",
+    "backend/tests/test_milestone_11_phase11a14_postgresql_qualification.py"
+  ],
+  "migration_expectation": "none",
+  "required_alembic_revision": "c3d4e5f6a7b8",
+  "test_suites": [
+    {"name": "M11A14 contracts", "kind": "contract", "path": "backend/tests/test_milestone_11_phase11a14_economic_recommendation_experiment_execution_observation_contracts.py", "postgresql": null, "expected_collected": 16},
+    {"name": "M11A14 PostgreSQL", "kind": "postgresql", "path": "backend/tests/test_milestone_11_phase11a14_postgresql_qualification.py", "postgresql": {"url_env": "ETM_G5_M11A14_DATABASE_URL", "role_env": "ETM_G5_M11A14_DB_ROLE", "required_role": "qualification", "expected_driver_prefix": "postgresql", "expected_host": "127.0.0.1", "expected_port": 5432, "expected_database": "etm_g5_m11a14_execution_observation_qualification", "required_revision": "c3d4e5f6a7b8", "fresh_database_required": true, "freshness_attestation_env": "ETM_G5_M11A14_DB_FRESHNESS_ATTESTED"}, "expected_collected": 6},
+    {"name": "Frozen M11A13 contracts regression", "kind": "regression", "path": "backend/tests/test_milestone_11_phase11a13_economic_recommendation_experiment_durable_activation_contracts.py", "postgresql": null, "expected_collected": 17},
+    {"name": "Frozen M11A13 PostgreSQL regression", "kind": "postgresql", "path": "backend/tests/test_milestone_11_phase11a13_postgresql_qualification.py", "postgresql": {"url_env": "ETM_G5_M11A13_DATABASE_URL", "role_env": "ETM_G5_M11A13_DB_ROLE", "required_role": "qualification", "expected_driver_prefix": "postgresql", "expected_host": "127.0.0.1", "expected_port": 5432, "expected_database": "etm_g5_m11a13_durable_activation_qualification", "required_revision": "c3d4e5f6a7b8", "fresh_database_required": true, "freshness_attestation_env": "ETM_G5_M11A13_DB_FRESHNESS_ATTESTED"}, "expected_collected": 7}
+  ],
+  "default_timeout_seconds": 600
+}
