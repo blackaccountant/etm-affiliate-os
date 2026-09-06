@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from time import perf_counter
 
@@ -28,6 +29,7 @@ from app.exceptions.handlers import register_exception_handlers
 from app.logging.logger import get_logger, request_completion_middleware
 from app.logging.logging_config import setup_logging
 from app.monitoring import METRICS_CONTENT_TYPE, metrics_registry, resolved_route_template
+from app.request_protection import RequestProtectionMiddleware
 
 from app.api.publisher import router as publisher_router
 from app.api.affiliate_links import router as affiliate_links_router
@@ -172,12 +174,10 @@ app = FastAPI(
 )
 
 
-@app.middleware("http")
 async def production_request_logging(request, call_next):
     return await request_completion_middleware(request, call_next, logger)
 
 
-@app.middleware("http")
 async def production_request_metrics(request, call_next):
     """Measure completed requests without changing application response behavior."""
     started = perf_counter()
@@ -216,6 +216,9 @@ app.add_middleware(
 
 )
 
+# Protection is inside API security so authentication/authorization retains its
+# frozen 401/403 contract, but outside CORS for every request that is admitted.
+app.add_middleware(RequestProtectionMiddleware)
 
 # -----------------------------------------------------
 # Exceptions
@@ -411,6 +414,12 @@ app.include_router(
 # This is registered after every route so the transport authority policy can
 # resolve FastAPI path templates and keep OpenAPI in exact agreement.
 install_api_security(app)
+
+# Starlette executes middleware in reverse registration order.  Logging and
+# metrics remain outermost for 429 correlation/4xx; API security remains the
+# frozen outer authorization guard around protection and CORS.
+app.add_middleware(BaseHTTPMiddleware, dispatch=production_request_metrics)
+app.add_middleware(BaseHTTPMiddleware, dispatch=production_request_logging)
 
 # Mounted infrastructure is intentionally not an APIRoute business operation.
 app.mount("/operator", operator_console)
