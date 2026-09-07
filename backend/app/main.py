@@ -29,6 +29,7 @@ from app.api.affiliate_earnings import router as affiliate_earnings_router
 from app.api.affiliate_payouts import router as affiliate_payouts_router
 from app.api.discovery import router as discovery_router
 from app.api.content import router as content_router
+from app.api.distribution import router as distribution_router
 
 
 # -----------------------------------------------------
@@ -303,4 +304,9 @@ app.include_router(
 
 app.include_router(
     content_router,
+)
+
+
+app.include_router(
+    distribution_router,
 )

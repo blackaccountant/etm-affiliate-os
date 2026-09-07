@@ -1,0 +1,48 @@
+{
+  "format_version": 1,
+  "phase": "GLR1",
+  "expected_branch": "milestone-11-optimization-signals",
+  "expected_base_head": "3268d566aa7852027a86e3406d3e2ef66a76b79a",
+  "candidate_manifest": [
+    "backend/app/distribution/pilot_revenue_launch_contracts.py",
+    "backend/app/services/pilot_revenue_launch_service.py",
+    "backend/app/api/distribution.py",
+    "backend/app/api/operator_auth.py",
+    "backend/app/core/config.py",
+    "backend/app/main.py",
+    "backend/tests/test_glr1_pilot_revenue_launch_contracts.py",
+    "backend/tests/test_glr1_pilot_revenue_launch_postgresql_qualification.py",
+    "backend/qualification_specs/glr1.json"
+  ],
+  "production_files": [
+    "backend/app/distribution/pilot_revenue_launch_contracts.py",
+    "backend/app/services/pilot_revenue_launch_service.py",
+    "backend/app/api/distribution.py",
+    "backend/app/api/operator_auth.py",
+    "backend/app/core/config.py",
+    "backend/app/main.py"
+  ],
+  "test_files": [
+    "backend/tests/test_glr1_pilot_revenue_launch_contracts.py",
+    "backend/tests/test_glr1_pilot_revenue_launch_postgresql_qualification.py"
+  ],
+  "compile_targets": [
+    "backend/app/distribution/pilot_revenue_launch_contracts.py",
+    "backend/app/services/pilot_revenue_launch_service.py",
+    "backend/app/api/distribution.py",
+    "backend/app/api/operator_auth.py",
+    "backend/app/core/config.py",
+    "backend/app/main.py",
+    "backend/tests/test_glr1_pilot_revenue_launch_contracts.py",
+    "backend/tests/test_glr1_pilot_revenue_launch_postgresql_qualification.py"
+  ],
+  "migration_expectation": "none",
+  "required_alembic_revision": "d7e8f9a0b1c2",
+  "test_suites": [
+    {"name": "GLR1 contracts", "kind": "contract", "path": "backend/tests/test_glr1_pilot_revenue_launch_contracts.py", "postgresql": null, "expected_collected": 5},
+    {"name": "GLR1 PostgreSQL", "kind": "postgresql", "path": "backend/tests/test_glr1_pilot_revenue_launch_postgresql_qualification.py", "postgresql": {"url_env": "ETM_G5_GLR1_DATABASE_URL", "role_env": "ETM_G5_GLR1_DB_ROLE", "required_role": "qualification", "expected_driver_prefix": "postgresql", "expected_host": "127.0.0.1", "expected_port": 5432, "expected_database": "etm_g5_glr1_pilot_revenue_launch_qualification", "required_revision": "d7e8f9a0b1c2", "fresh_database_required": true, "freshness_attestation_env": "ETM_G5_GLR1_DB_FRESHNESS_ATTESTED"}, "expected_collected": 3},
+    {"name": "Frozen M11A16 contracts regression", "kind": "regression", "path": "backend/tests/test_milestone_11_phase11a16_economic_recommendation_experiment_economic_evidence_contracts.py", "postgresql": null, "expected_collected": 7},
+    {"name": "Frozen M11A16 PostgreSQL regression", "kind": "postgresql", "path": "backend/tests/test_milestone_11_phase11a16_postgresql_qualification.py", "postgresql": {"url_env": "ETM_G5_M11A16_DATABASE_URL", "role_env": "ETM_G5_M11A16_DB_ROLE", "required_role": "qualification", "expected_driver_prefix": "postgresql", "expected_host": "127.0.0.1", "expected_port": 5432, "expected_database": "etm_g5_m11a16_economic_evidence_qualification", "required_revision": "d7e8f9a0b1c2", "fresh_database_required": true, "freshness_attestation_env": "ETM_G5_M11A16_DB_FRESHNESS_ATTESTED"}, "expected_collected": 3}
+  ],
+  "default_timeout_seconds": 600
+}
