@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "phase": "GLR2",
+  "expected_branch": "milestone-11-optimization-signals",
+  "expected_base_head": "e62ac6eb093e768234074f19579e52a94025b791",
+  "candidate_manifest": [
+    "backend/app/distribution/adapters/wordpress.py",
+    "backend/app/core/config.py",
+    "backend/app/api/distribution.py",
+    "backend/tests/test_glr2_wordpress_publication_contracts.py",
+    "backend/tests/test_glr2_postgresql_qualification.py",
+    "backend/qualification_specs/glr2.json"
+  ],
+  "production_files": [
+    "backend/app/distribution/adapters/wordpress.py",
+    "backend/app/core/config.py",
+    "backend/app/api/distribution.py"
+  ],
+  "test_files": [
+    "backend/tests/test_glr2_wordpress_publication_contracts.py",
+    "backend/tests/test_glr2_postgresql_qualification.py"
+  ],
+  "compile_targets": [
+    "backend/app/distribution/adapters/wordpress.py",
+    "backend/app/core/config.py",
+    "backend/app/api/distribution.py",
+    "backend/tests/test_glr2_wordpress_publication_contracts.py",
+    "backend/tests/test_glr2_postgresql_qualification.py"
+  ],
+  "migration_expectation": "none",
+  "required_alembic_revision": "d7e8f9a0b1c2",
+  "test_suites": [
+    {"name": "GLR2 contracts", "kind": "contract", "path": "backend/tests/test_glr2_wordpress_publication_contracts.py", "postgresql": null, "expected_collected": 12},
+    {"name": "GLR2 PostgreSQL", "kind": "postgresql", "path": "backend/tests/test_glr2_postgresql_qualification.py", "postgresql": {"url_env": "ETM_G5_GLR2_DATABASE_URL", "role_env": "ETM_G5_GLR2_DB_ROLE", "required_role": "qualification", "expected_driver_prefix": "postgresql", "expected_host": "127.0.0.1", "expected_port": 5432, "expected_database": "etm_g5_glr2_wordpress_publication_qualification", "required_revision": "d7e8f9a0b1c2", "fresh_database_required": true, "freshness_attestation_env": "ETM_G5_GLR2_DB_FRESHNESS_ATTESTED"}, "expected_collected": 6},
+    {"name": "Frozen GLR1 regression", "kind": "regression", "path": "backend/tests/test_glr1_pilot_revenue_launch_contracts.py", "postgresql": null, "expected_collected": 5},
+    {"name": "Frozen M11A16 regression", "kind": "regression", "path": "backend/tests/test_milestone_11_phase11a16_economic_recommendation_experiment_economic_evidence_contracts.py", "postgresql": null, "expected_collected": 7}
+  ],
+  "default_timeout_seconds": 600
+}

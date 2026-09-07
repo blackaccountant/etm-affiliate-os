@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     RESEND_FROM_NAME: str = ""
     RESEND_REQUEST_TIMEOUT_SECONDS: float = Field(default=10.0, ge=0.1, le=30.0)
     OPERATOR_API_KEY: str | None = None
+    CMS_WORDPRESS_BASE_URL: str = ""
+    CMS_WORDPRESS_USERNAME: str = ""
+    CMS_WORDPRESS_APP_PASSWORD: str = ""
+    PUBLIC_API_BASE_URL: str = ""
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
