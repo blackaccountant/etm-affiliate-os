@@ -1,247 +1,206 @@
-from datetime import datetime, timezone
 from types import SimpleNamespace
-
+import httpx
 import pytest
-from fastapi import HTTPException
 from pydantic import ValidationError
-
-from app.api.distribution import PilotCmsPublishPayload, _absolute_tracked_url, _render_final_content
+from app.api.distribution import PilotCmsPublishPayload
+from app.api.distribution import pilot_cms_publish
 from app.core.config import settings
 from app.distribution.adapters.wordpress import WordPressDistributionAdapter, deterministic_wordpress_slug
-from app.distribution.contracts import (
-    DistributionFailureCategory,
-    DistributionStatusLookupState,
-    DistributionValidationResult,
-)
+from app.distribution.contracts import DistributionFailureCategory, DistributionStatusLookupState
+from app.services.pilot_cms_publication_service import PilotCmsPublicationService
+from app.workflows.distribution.distribution_publish_workflow import DistributionPublishWorkflow
+from app.distribution.contracts import payload_fingerprint_for_body, DistributionValidationResult, DistributionPublishResult
+from app.workflows.distribution.distribution_reconcile_workflow import DistributionReconcileWorkflow
+from app.distribution.contracts import DistributionStatusResult
+from app.distribution.distribution_reconcile_lifecycle_participant import DistributionReconcileLifecycleParticipant
+from app.models.execution import Execution
 
 
-class _FakeResponse:
-    def __init__(self, status_code, payload=None):
-        self.status_code = status_code
-        self._payload = payload or {}
+def _workflow_fakes(monkeypatch, fingerprint, rendered=None):
+    body="prepared"; run=SimpleNamespace(id="run",status="CREATED",platform="wordpress",account_reference="a",destination="d",prepared_content_body=body,payload_fingerprint=fingerprint,generated_content_artifact_id="artifact",content_evaluation_id="evaluation",scheduled_for=None)
+    artifact=SimpleNamespace(id="artifact",generation_run_id="g"); evaluation=SimpleNamespace(id="evaluation",artifact_id="artifact",generation_run_id="g",decision="APPROVED",approved=True)
+    class Db:
+        def get(self, cls, key): return run if cls.__name__=="DistributionRun" else artifact if cls.__name__=="GeneratedContentArtifact" else evaluation
+        def close(self): pass
+    class Repo:
+        def __init__(self, db): pass
+        def transition_owned(self, run_id, authority, expected_statuses, status, values):
+            run.status=status
+            for k,v in values.items(): setattr(run,k,v)
+            return run
+    calls={"render":0,"publish":0}
+    class Resolver:
+        def __init__(self,db):pass
+        def render_wordpress_body(self, run): calls["render"]+=1; return rendered or "rendered"
+    class Adapter:
+        metadata=SimpleNamespace(supports_status_lookup=True)
+        def validate_target(self, request): return DistributionValidationResult(valid=True)
+        def publish(self, request): calls["publish"]+=1; calls["body"]=request.content_body; return DistributionPublishResult(success=True,external_post_id="p",external_url="https://example.invalid/p",published_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc))
+    monkeypatch.setattr("app.workflows.distribution.distribution_publish_workflow.DistributionRunRepository",Repo)
+    monkeypatch.setattr("app.workflows.distribution.distribution_publish_workflow.PilotCmsPublicationService",Resolver)
+    monkeypatch.setattr("app.workflows.distribution.distribution_publish_workflow.current_execution_runtime_context",lambda:SimpleNamespace(authority=SimpleNamespace(),is_recovery=False,mission_id="m"))
+    return DistributionPublishWorkflow(session_factory=lambda:Db(),adapter_registry=SimpleNamespace(resolve=lambda p:Adapter())),run,calls
 
-    def json(self):
-        return self._payload
+def test_workflow_invalid_fingerprint_blocks_render_and_publish(monkeypatch):
+    workflow,run,calls=_workflow_fakes(monkeypatch,"0"*64); before=(run.prepared_content_body,run.payload_fingerprint)
+    result=workflow.execute({"distribution_run_id":"run"})
+    assert not result.success and calls=={"render":0,"publish":0} and (run.prepared_content_body,run.payload_fingerprint)==before
 
+def test_workflow_valid_fingerprint_renders_only_after_integrity(monkeypatch):
+    workflow,run,calls=_workflow_fakes(monkeypatch,payload_fingerprint_for_body("prepared"),"rendered-body"); before=(run.prepared_content_body,run.payload_fingerprint)
+    result=workflow.execute({"distribution_run_id":"run"})
+    assert result.success and calls["render"]==1 and calls["publish"]==1 and calls["body"]=="rendered-body" and (run.prepared_content_body,run.payload_fingerprint)==before
 
-def test_wordpress_adapter_metadata():
-    metadata = WordPressDistributionAdapter().metadata
-    assert metadata.platform == "wordpress"
-    assert metadata.supports_status_lookup is True
-    assert metadata.supports_native_idempotency is False
+def test_ambiguous_publish_enters_reconciliation_required(monkeypatch):
+    workflow,run,calls=_workflow_fakes(monkeypatch,payload_fingerprint_for_body("prepared"))
+    class Adapter:
+        metadata=SimpleNamespace(supports_status_lookup=True)
+        def validate_target(self,r):return DistributionValidationResult(valid=True)
+        def publish(self,r):calls["publish"]+=1;return DistributionPublishResult(success=False,failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT,safe_message="ambiguous")
+    workflow.adapter_registry=SimpleNamespace(resolve=lambda p:Adapter())
+    result=workflow.execute({"distribution_run_id":"run"})
+    assert not result.success and run.status=="RECONCILIATION_REQUIRED" and calls["publish"]==1
 
+def test_reconcile_published_uses_status_only(monkeypatch):
+    run=SimpleNamespace(id="run",status="RECONCILIATION_REQUIRED",platform="wordpress",account_reference="a",destination="d",external_post_id=None)
+    class Db:
+        def get(self,*a):return run
+        def close(self):pass
+    class Repo:
+        def __init__(self,db):pass
+        def claim_reconciliation(self,*a):run.status="RECONCILING";return run
+        def resume_reconciliation(self,*a):return run
+        def transition_owned(self,*a,**kw):
+            run.status=kw["status"]
+            for k,v in kw.get("values",{}).items():setattr(run,k,v)
+            return run
+    calls={"publish":0,"status":0}
+    class Adapter:
+        metadata=SimpleNamespace(supports_status_lookup=True)
+        def publish(self,r):calls["publish"]+=1
+        def get_publish_status(self,r):
+            calls["status"]+=1
+            return DistributionStatusResult(state="PUBLISHED",external_post_id="post",external_url="https://example.invalid/p",published_at=__import__('datetime').datetime.now(__import__('datetime').timezone.utc))
+    monkeypatch.setattr("app.workflows.distribution.distribution_reconcile_workflow.DistributionRunRepository",Repo)
+    monkeypatch.setattr("app.workflows.distribution.distribution_reconcile_workflow.current_execution_runtime_context",lambda:SimpleNamespace(authority=SimpleNamespace(),is_recovery=False))
+    result=DistributionReconcileWorkflow(session_factory=lambda:Db(),adapter_registry=SimpleNamespace(resolve=lambda p:Adapter())).execute({"distribution_run_id":"run"})
+    assert result.success and run.status=="COMPLETED" and run.external_post_id=="post" and calls=={"publish":0,"status":1}
 
-def test_publish_uses_content_status_and_deterministic_slug(monkeypatch):
-    captured = {}
+def test_reconcile_not_found_creates_generation_scoped_followup(monkeypatch):
+    run=SimpleNamespace(id="run",status="RECONCILIATION_REQUIRED",platform="wordpress",account_reference="a",destination="d",external_post_id=None,publish_generation=0,failure_category="AMBIGUOUS_SUBMIT_RESULT",error_summary="ambiguous")
+    execution=SimpleNamespace(input_data='{"distribution_run_id":"run"}')
+    class Db:
+        def get(self,cls,key):return execution if cls is Execution else run
+        def close(self):pass
+        def query(self,cls):
+            class Q:
+                def filter(self,*a):return self
+                def with_for_update(self):return self
+                def one_or_none(self):return run
+            return Q()
+    class Repo:
+        def __init__(self,db):pass
+        def claim_reconciliation(self,*a):run.status="RECONCILING";return run
+        def resume_reconciliation(self,*a):return run
+        def transition_owned(self,*a,**kw):run.status=kw["status"];return run
+    calls={"status":0,"publish":0}
+    class Adapter:
+        metadata=SimpleNamespace(supports_status_lookup=True)
+        def publish(self,r):calls["publish"]+=1
+        def get_publish_status(self,r):calls["status"]+=1;return DistributionStatusResult(state="NOT_FOUND")
+    authority=SimpleNamespace(execution_id=7)
+    monkeypatch.setattr("app.workflows.distribution.distribution_reconcile_workflow.DistributionRunRepository",Repo)
+    monkeypatch.setattr("app.workflows.distribution.distribution_reconcile_workflow.current_execution_runtime_context",lambda:SimpleNamespace(authority=authority,is_recovery=False))
+    result=DistributionReconcileWorkflow(session_factory=lambda:Db(),adapter_registry=SimpleNamespace(resolve=lambda p:Adapter())).execute({"distribution_run_id":"run"})
+    spec=DistributionReconcileLifecycleParticipant().apply(Db(),authority,"COMPLETED",{"workflow":"distribution_reconcile","data":result.data})
+    assert calls=={"status":1,"publish":0} and run.status=="CREATED" and run.publish_generation==1
+    assert spec.workflow=="distribution_publish" and spec.idempotency_key=="distribution-publish:run:1"
 
-    def fake_request(method, url, **kwargs):
-        captured["method"] = method
-        captured["url"] = url
-        captured["auth"] = kwargs.get("auth")
-        captured["json"] = kwargs.get("json")
-        return _FakeResponse(201, {"id": 432, "link": "https://example.com/hello", "date_gmt": "2026-09-07T12:00:00Z"})
+class Response:
+    def __init__(self, code, data=None): self.status_code,self.data=code,([] if data is None else data)
+    def json(self): return self.data
 
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_BASE_URL", "https://example.com")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_USERNAME", "etm-user")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_APP_PASSWORD", "secret")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", fake_request)
+def request(): return SimpleNamespace(distribution_run_id="run",content_body="body",payload_fingerprint="a"*64,destination="d",correlation_key="distribution:run",scheduled_for=None,generated_content_artifact_id="a",content_evaluation_id="e",platform="wordpress",account_reference="a")
+def post(): return {"id":1,"link":"https://example.invalid/p","date_gmt":"2026-09-07T12:00:00Z","status":"publish"}
+def configured(monkeypatch):
+    monkeypatch.setattr(settings,"CMS_WORDPRESS_BASE_URL","https://example.invalid");monkeypatch.setattr(settings,"CMS_WORDPRESS_USERNAME","dummy");monkeypatch.setattr(settings,"CMS_WORDPRESS_APP_PASSWORD","dummy-secret")
 
-    result = WordPressDistributionAdapter().publish(
-        SimpleNamespace(
-            distribution_run_id="run-123",
-            content_body="<p>Hello</p>",
-            payload_fingerprint="a" * 64,
-            destination="blog",
-            correlation_key="distribution:run-123",
-            scheduled_for=None,
-        )
-    )
+def test_metadata_and_historical_slug():
+    m=WordPressDistributionAdapter().metadata;assert (m.platform,m.supports_status_lookup,m.supports_native_idempotency)==("wordpress",True,False);assert deterministic_wordpress_slug("run")=="distribution-acba25512100f80b56"
+def test_lookup_precedes_post(monkeypatch):
+    configured(monkeypatch);calls=[]
+    def fake(method,url,**kw): calls.append(method);return Response(200,[]) if method=="GET" else Response(201,post())
+    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",fake);assert WordPressDistributionAdapter().publish(request()).success;assert calls==["GET","POST"]
+def test_existing_slug_reuses_without_post(monkeypatch):
+    configured(monkeypatch);calls=[]
+    def fake(method,url,**kw): calls.append(method);return Response(200,[post()])
+    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",fake);assert WordPressDistributionAdapter().publish(request()).success;assert calls==["GET"]
+def test_multiple_matches_fail_closed(monkeypatch):
+    configured(monkeypatch);monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",lambda *a,**k:Response(200,[post(),post()]));assert WordPressDistributionAdapter().publish(request()).failure_category is DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT
+def test_post_timeout_ambiguous_lookup_timeout_pre_submit(monkeypatch):
+    configured(monkeypatch)
+    def post_timeout(method,url,**kw):
+        if method=="GET": return Response(200,[])
+        raise httpx.TimeoutException("dummy")
+    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",post_timeout);assert WordPressDistributionAdapter().publish(request()).failure_category is DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT
+    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",lambda *a,**k:(_ for _ in ()).throw(httpx.TimeoutException("dummy")));assert WordPressDistributionAdapter().publish(request()).failure_category is DistributionFailureCategory.TIMEOUT_BEFORE_SUBMIT
+def test_malformed_success_ambiguous(monkeypatch):
+    configured(monkeypatch);monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",lambda method,url,**k:Response(200,[]) if method=="GET" else Response(201,{"id":1}));assert WordPressDistributionAdapter().publish(request()).failure_category is DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT
+def test_status_lookup(monkeypatch):
+    configured(monkeypatch);monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",lambda method,url,**k:Response(200,post()) if url.endswith("/1") else Response(200,[post()]));a=WordPressDistributionAdapter();assert a.get_publish_status(SimpleNamespace(distribution_run_id="run",platform="wordpress",account_reference="a",destination="d",external_post_id="1")).state is DistributionStatusLookupState.PUBLISHED
+def test_auth_permission_secret_safe(monkeypatch):
+    configured(monkeypatch)
+    for code,category in ((401,DistributionFailureCategory.AUTHENTICATION),(403,DistributionFailureCategory.PERMISSION_DENIED)):
+        monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request",lambda *a,**k:Response(code,[]));r=WordPressDistributionAdapter().publish(request());assert r.failure_category is category and "dummy-secret" not in r.safe_message
+def test_caller_authority_forbidden():
+    for field in ("tracking_code","affiliate_url","external_post_id","wordpress_password"):
+        with pytest.raises(ValidationError): PilotCmsPublishPayload(distribution_run_id="r",**{field:"x"})
 
-    assert result.success is True
-    assert captured["method"] == "POST"
-    assert captured["json"]["content"] == "<p>Hello</p>"
-    assert "content.rendered" not in captured["json"]
-    assert captured["json"]["status"] == "publish"
-    assert captured["json"]["slug"] == deterministic_wordpress_slug("run-123")
-    assert result.external_post_id == "432"
-    assert result.external_url == "https://example.com/hello"
-    assert result.published_at == datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc)
+def test_exact_lineage_cardinality_and_deterministic_absolute_render(monkeypatch):
+    monkeypatch.setattr(settings,"PUBLIC_API_BASE_URL","https://api.example/ ")
+    run=SimpleNamespace(id="run",prepared_content_body="Hi {{affiliate_link}}",payload_fingerprint="f")
+    pub,ctx,link=SimpleNamespace(id="p"),SimpleNamespace(id="c",affiliate_program_id=1),SimpleNamespace(affiliate_program_id=1,tracking_code="track")
+    class Q:
+        def __init__(self,v):self.v=v
+        def filter_by(self,**k):return self
+        def all(self):return self.v
+    class Db:
+        def get(self,*a):return run
+        def query(self,model):return Q([pub] if model.__name__=="AttributionPublication" else [ctx] if model.__name__=="AttributionContext" else [link])
+    before=run.prepared_content_body;service=PilotCmsPublicationService(Db());body=service.render_wordpress_body(run)
+    assert "https://api.example/affiliate-links/go/track" in body and run.prepared_content_body==before and body==service.render_wordpress_body(run)
 
+def test_lineage_rejects_multiple_and_program_conflict(monkeypatch):
+    monkeypatch.setattr(settings,"PUBLIC_API_BASE_URL","https://api.example")
+    run=SimpleNamespace(id="run",prepared_content_body="Hi")
+    class Q:
+        def __init__(self,v):self.v=v
+        def filter_by(self,**k):return self
+        def all(self):return self.v
+    class Db:
+        def get(self,*a):return run
+        def query(self,model):return Q([SimpleNamespace(id="p")] if model.__name__=="AttributionPublication" else [SimpleNamespace(id="c",affiliate_program_id=1)] if model.__name__=="AttributionContext" else [SimpleNamespace(affiliate_program_id=1,tracking_code="a"),SimpleNamespace(affiliate_program_id=1,tracking_code="b")])
+    with pytest.raises(ValueError):PilotCmsPublicationService(Db()).render_wordpress_body(run)
 
-def test_deterministic_slug_is_stable_and_unique_by_run():
-    first = deterministic_wordpress_slug("distribution-run-1")
-    second = deterministic_wordpress_slug("distribution-run-1")
-    third = deterministic_wordpress_slug("distribution-run-2")
-    assert first == second
-    assert first != third
+def test_pilot_endpoint_activates_durable_mission(monkeypatch):
+    run=SimpleNamespace(id="run",status="CREATED")
+    class Db:
+        def get(self,*a):return run
+    called=[]
+    class Launcher:
+        def __init__(self,**kwargs):pass
+        def launch(self,run_id):
+            called.append(run_id)
+            return SimpleNamespace(distribution_run_id=run_id,mission_id="m",mission_status="RUNNING",workflow="distribution_publish")
+    monkeypatch.setattr("app.api.distribution.ContentDistributionMissionLaunchService",Launcher)
+    result=pilot_cms_publish(PilotCmsPublishPayload(distribution_run_id="run"),Db())
+    assert called==["run"] and result["workflow"]=="distribution_publish"
 
-
-def test_validation_and_failure_classification(monkeypatch):
-    adapter = WordPressDistributionAdapter()
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_BASE_URL", "https://example.com")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_USERNAME", "etm-user")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_APP_PASSWORD", "secret")
-
-    def fake_request(method, url, **kwargs):
-        if method == "GET":
-            return _FakeResponse(401)
-        raise AssertionError("unexpected call")
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", fake_request)
-    result = adapter.validate_target(SimpleNamespace(distribution_run_id="run", platform="wordpress", account_reference="acct", destination="blog", payload_fingerprint="a" * 64))
-    assert result.valid is False
-    assert result.failure_category == DistributionFailureCategory.AUTHENTICATION
-
-    def auth_fail(method, url, **kwargs):
-        return _FakeResponse(403)
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", auth_fail)
-    result = adapter.validate_target(SimpleNamespace(distribution_run_id="run", platform="wordpress", account_reference="acct", destination="blog", payload_fingerprint="a" * 64))
-    assert result.failure_category == DistributionFailureCategory.PERMISSION_DENIED
-
-    def rate_fail(method, url, **kwargs):
-        return _FakeResponse(429)
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", rate_fail)
-    result = adapter.validate_target(SimpleNamespace(distribution_run_id="run", platform="wordpress", account_reference="acct", destination="blog", payload_fingerprint="a" * 64))
-    assert result.failure_category == DistributionFailureCategory.RATE_LIMIT
-
-    def timeout_event(method, url, **kwargs):
-        raise TimeoutError()
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", timeout_event)
-    result = adapter.validate_target(SimpleNamespace(distribution_run_id="run", platform="wordpress", account_reference="acct", destination="blog", payload_fingerprint="a" * 64))
-    assert result.failure_category == DistributionFailureCategory.TIMEOUT_BEFORE_SUBMIT
-
-
-def test_publish_error_classification(monkeypatch):
-    adapter = WordPressDistributionAdapter()
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_BASE_URL", "https://example.com")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_USERNAME", "etm-user")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_APP_PASSWORD", "secret")
-
-    def reject(method, url, **kwargs):
-        return _FakeResponse(422)
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", reject)
-    result = adapter.publish(SimpleNamespace(distribution_run_id="r1", content_body="body", payload_fingerprint="a" * 64, destination="blog", scheduled_for=None, correlation_key="distribution:r1", generated_content_artifact_id="artifact", content_evaluation_id="evaluation", platform="wordpress", account_reference="acct"))
-    assert result.success is False
-    assert result.failure_category == DistributionFailureCategory.INVALID_CONTENT
-
-    def network(method, url, **kwargs):
-        raise ConnectionError()
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", network)
-    result = adapter.publish(SimpleNamespace(distribution_run_id="r1", content_body="body", payload_fingerprint="a" * 64, destination="blog", scheduled_for=None, correlation_key="distribution:r1", generated_content_artifact_id="artifact", content_evaluation_id="evaluation", platform="wordpress", account_reference="acct"))
-    assert result.failure_category == DistributionFailureCategory.PROVIDER_UNAVAILABLE
-
-
-def test_status_lookup_by_id_and_slug(monkeypatch):
-    adapter = WordPressDistributionAdapter()
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_BASE_URL", "https://example.com")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_USERNAME", "etm-user")
-    monkeypatch.setattr("app.distribution.adapters.wordpress.settings.CMS_WORDPRESS_APP_PASSWORD", "secret")
-
-    def fake_request(method, url, **kwargs):
-        if method == "GET" and url.endswith("posts/99"):
-            return _FakeResponse(200, {"id": 99, "link": "https://example.com/post-99", "status": "publish", "date_gmt": "2026-09-07T12:00:00Z"})
-        if method == "GET" and url.endswith("posts") and kwargs.get("params", {}).get("slug") == deterministic_wordpress_slug("run-5"):
-            return _FakeResponse(200, [{"id": 88, "link": "https://example.com/post-88", "status": "publish", "date_gmt": "2026-09-07T12:00:00Z"}])
-        if method == "GET" and url.endswith("posts"):
-            return _FakeResponse(200, [])
-        raise AssertionError(url)
-
-    monkeypatch.setattr("app.distribution.adapters.wordpress.httpx.request", fake_request)
-    result = adapter.get_publish_status(SimpleNamespace(distribution_run_id="run-3", platform="wordpress", account_reference="acct", destination="blog", external_post_id="99", correlation_key="distribution:run-3"))
-    assert result.state == DistributionStatusLookupState.PUBLISHED
-    assert result.external_post_id == "99"
-    assert result.external_url == "https://example.com/post-99"
-
-    slug_result = adapter.get_publish_status(SimpleNamespace(distribution_run_id="run-5", platform="wordpress", account_reference="acct", destination="blog", external_post_id=None, correlation_key="distribution:run-5"))
-    assert slug_result.state == DistributionStatusLookupState.PUBLISHED
-    assert slug_result.external_post_id == "88"
-
-    no_match = adapter.get_publish_status(SimpleNamespace(distribution_run_id="run-6", platform="wordpress", account_reference="acct", destination="blog", external_post_id=None, correlation_key="distribution:run-6"))
-    assert no_match.state == DistributionStatusLookupState.NOT_FOUND
-
-
-def test_operator_api_payload_and_extra_rejection():
-    payload = PilotCmsPublishPayload(distribution_run_id="run-1")
-    assert payload.distribution_run_id == "run-1"
-    with pytest.raises(ValidationError):
-        PilotCmsPublishPayload(distribution_run_id="run-1", platform="wordpress")
-    with pytest.raises(ValidationError):
-        PilotCmsPublishPayload(distribution_run_id="run-1", tracking_code="abc")
-
-
-def test_absolute_tracked_url_and_final_render_are_deterministic(monkeypatch):
-    monkeypatch.setattr(settings, "PUBLIC_API_BASE_URL", "https://api.example.com/ ")
-    assert _absolute_tracked_url("abc123") == "https://api.example.com/affiliate-links/go/abc123"
-    rendered = _render_final_content("<p>hello</p>", "https://api.example.com/affiliate-links/go/abc123")
-    assert "https://api.example.com/affiliate-links/go/abc123" in rendered
-    assert rendered == _render_final_content("<p>hello</p>", "https://api.example.com/affiliate-links/go/abc123")
-
-
-def test_pilot_cms_publish_replay_returns_existing_receipt(monkeypatch):
-    calls = {"count": 0}
-
-    class FakeDb:
-        def __init__(self):
-            self.run = SimpleNamespace(id="run-7", status="COMPLETED", external_post_id="12", external_url="https://example.com/post-12", generated_content_artifact_id="artifact", content_evaluation_id="evaluation", platform="wordpress", account_reference="acct", destination="blog", payload_fingerprint="a" * 64, prepared_content_body="body", scheduled_for=None)
-        def get(self, cls, key):
-            if cls.__name__ == "DistributionRun":
-                return self.run
-            return None
-        def query(self, *args, **kwargs):
-            class Query:
-                def filter_by(self, **_):
-                    return self
-                def first(self):
-                    return SimpleNamespace(id="publication", attribution_publication_id="pub", attribution_context_id="ctx", tracking_code="abc123")
-            return Query()
-        def commit(self):
-            return None
-
-    class FakeAdapter:
-        def publish(self, request):
-            calls["count"] += 1
-            raise AssertionError("publish must not be called for completed replay")
-
-    monkeypatch.setattr("app.api.distribution.WordPressDistributionAdapter", FakeAdapter)
-    db = FakeDb()
-    result = __import__("app.api.distribution", fromlist=["pilot_cms_publish"]).pilot_cms_publish(SimpleNamespace(distribution_run_id="run-7"), db)
-    assert result["external_post_id"] == "12"
-    assert result["external_url"] == "https://example.com/post-12"
-    assert calls["count"] == 0
-
-
-def test_no_affiliate_create_or_context_mutation_on_route(monkeypatch):
-    seen = {"calls": 0}
-
-    class FakeDb:
-        def __init__(self):
-            self.run = SimpleNamespace(id="run-8", status="CREATED", generated_content_artifact_id="artifact", content_evaluation_id="evaluation", platform="wordpress", account_reference="acct", destination="blog", payload_fingerprint="a" * 64, prepared_content_body="body", scheduled_for=None)
-        def get(self, cls, key):
-            if cls.__name__ == "DistributionRun":
-                return self.run
-            return None
-        def query(self, *args, **kwargs):
-            seen["calls"] += 1
-            class Query:
-                def filter_by(self, **_):
-                    return self
-                def first(self):
-                    return SimpleNamespace(id="publication", attribution_publication_id="pub", attribution_context_id="ctx", tracking_code="track-8")
-            return Query()
-        def commit(self):
-            return None
-
-    class FakeAdapter:
-        def publish(self, request):
-            return SimpleNamespace(success=True, external_post_id="9", external_url="https://example.com/published", published_at=datetime(2026, 9, 7, 12, 0, tzinfo=timezone.utc), safe_metadata={"platform_status": "published"}, failure_category=None, safe_message=None)
-
-    monkeypatch.setattr("app.api.distribution.WordPressDistributionAdapter", FakeAdapter)
-    monkeypatch.setattr("app.api.distribution._absolute_tracked_url", lambda tracking_code: "https://api.example.com/affiliate-links/go/track-8")
-    result = __import__("app.api.distribution", fromlist=["pilot_cms_publish"]).pilot_cms_publish(SimpleNamespace(distribution_run_id="run-8"), FakeDb())
-    assert result["external_post_id"] == "9"
-    assert seen["calls"] >= 1
+def test_completed_replay_does_not_activate_mission(monkeypatch):
+    run=SimpleNamespace(id="run",status="COMPLETED",external_post_id="post",external_url="https://example.invalid/post")
+    class Db:
+        def get(self,*a):return run
+    class Launcher:
+        def __init__(self,**kwargs):raise AssertionError("must not activate")
+    monkeypatch.setattr("app.api.distribution.ContentDistributionMissionLaunchService",Launcher)
+    assert pilot_cms_publish(PilotCmsPublishPayload(distribution_run_id="run"),Db())["external_post_id"]=="post"

@@ -22,6 +22,7 @@ from app.models.mission_record import MissionRecord
 from app.models.worker import Worker
 from app.repositories.distribution_run_repository import DistributionRunRepository
 from app.services.execution_runtime_context import current_execution_runtime_context
+from app.services.pilot_cms_publication_service import PilotCmsPublicationService
 from app.workflow_engine.workflow_result import WorkflowResult
 
 
@@ -197,7 +198,8 @@ class DistributionPublishWorkflow:
                 run = self._owned_set(repository, run, context, "RUNNING")
             run = self._owned_set(repository, run, context, "PUBLISHING")
             try:
-                result = adapter.publish(DistributionPublishRequest(run.id, artifact.id, evaluation.id, run.platform, run.account_reference, run.destination, run.payload_fingerprint, run.prepared_content_body, run.scheduled_for))
+                provider_body = PilotCmsPublicationService(db).render_wordpress_body(run) if run.platform == "wordpress" else run.prepared_content_body
+                result = adapter.publish(DistributionPublishRequest(run.id, artifact.id, evaluation.id, run.platform, run.account_reference, run.destination, run.payload_fingerprint, provider_body, run.scheduled_for))
             except Exception:
                 self._owned_set(repository, run, context, "FAILED", category=DistributionFailureCategory.UNKNOWN_PERMANENT.value, error="permanent distribution provider error")
                 return self._failure(values, "permanent distribution provider error")

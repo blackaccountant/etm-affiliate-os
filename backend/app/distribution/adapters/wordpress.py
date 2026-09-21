@@ -147,9 +147,51 @@ class WordPressDistributionAdapter(DistributionAdapter):
             safe_message="wordpress validation was not accepted",
         )
 
+    @staticmethod
+    def _published_result(post: dict[str, Any]) -> DistributionPublishResult | None:
+        post_id, link = post.get("id"), post.get("link")
+        published_at = _parse_wordpress_datetime(post.get("date_gmt") or post.get("date"))
+        if not isinstance(post_id, (int, str)) or not link or published_at is None:
+            return None
+        return DistributionPublishResult(success=True, external_post_id=str(post_id), external_url=str(link), published_at=published_at, safe_metadata={"platform_status": "published", "provider_state": "publish"})
+
+    def _posts_for_slug(self, slug: str) -> list[dict[str, Any]]:
+        response = self._request("GET", "/wp-json/wp/v2/posts", params={"slug": slug, "per_page": 10, "status": "publish"})
+        if response.status_code != 200:
+            raise RuntimeError(str(response.status_code))
+        posts = response.json()
+        if not isinstance(posts, list):
+            raise ValueError("wordpress slug lookup response was not parseable")
+        return [post for post in posts if isinstance(post, dict)]
+
     def publish(self, request: DistributionPublishRequest) -> DistributionPublishResult:
         try:
             slug = deterministic_wordpress_slug(request.distribution_run_id)
+            posts = self._posts_for_slug(slug)
+        except TimeoutError:
+            return DistributionPublishResult(success=False, failure_category=DistributionFailureCategory.TIMEOUT_BEFORE_SUBMIT, safe_message="wordpress pre-submit lookup timed out")
+        except ConnectionError:
+            return DistributionPublishResult(success=False, failure_category=DistributionFailureCategory.PROVIDER_UNAVAILABLE, safe_message="wordpress pre-submit lookup failed")
+        except ValueError as exc:
+            return DistributionPublishResult(success=False, failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT, safe_message=str(exc))
+        except RuntimeError as exc:
+            category = _http_error_category(int(str(exc)) if str(exc).isdigit() else None)
+            message = "wordpress pre-submit lookup was rejected"
+            if category is DistributionFailureCategory.AUTHENTICATION:
+                message = "wordpress authentication failed"
+            elif category is DistributionFailureCategory.PERMISSION_DENIED:
+                message = "wordpress permissions are insufficient"
+            return DistributionPublishResult(success=False, failure_category=category, safe_message=message)
+
+        if len(posts) == 1:
+            result = self._published_result(posts[0])
+            if result is not None:
+                return result
+            return DistributionPublishResult(success=False, failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT, safe_message="wordpress existing post receipt was incomplete")
+        if len(posts) > 1:
+            return DistributionPublishResult(success=False, failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT, safe_message="wordpress deterministic publication identity is ambiguous")
+
+        try:
             payload = {
                 "content": request.content_body,
                 "status": "publish",
@@ -165,14 +207,14 @@ class WordPressDistributionAdapter(DistributionAdapter):
         except TimeoutError:
             return DistributionPublishResult(
                 success=False,
-                failure_category=DistributionFailureCategory.TIMEOUT_BEFORE_SUBMIT,
-                safe_message="wordpress publish timed out before confirmation",
+                failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT,
+                safe_message="wordpress publish outcome is ambiguous",
             )
         except ConnectionError:
             return DistributionPublishResult(
                 success=False,
-                failure_category=DistributionFailureCategory.PROVIDER_UNAVAILABLE,
-                safe_message="wordpress provider is unavailable",
+                failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT,
+                safe_message="wordpress publish outcome is ambiguous",
             )
 
         if response.status_code in (200, 201):
@@ -184,22 +226,14 @@ class WordPressDistributionAdapter(DistributionAdapter):
                     failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT,
                     safe_message="wordpress publish response was not parseable",
                 )
-            post_id = data.get("id")
-            link = data.get("link")
-            published_at = _parse_wordpress_datetime(data.get("date_gmt") or data.get("date"))
-            if not isinstance(post_id, (int, str)) or not link or published_at is None:
+            result = self._published_result(data) if isinstance(data, dict) else None
+            if result is None:
                 return DistributionPublishResult(
                     success=False,
                     failure_category=DistributionFailureCategory.AMBIGUOUS_SUBMIT_RESULT,
                     safe_message="wordpress publish response was incomplete",
                 )
-            return DistributionPublishResult(
-                success=True,
-                external_post_id=str(post_id),
-                external_url=str(link),
-                published_at=published_at,
-                safe_metadata={"platform_status": "published", "provider_state": "publish"},
-            )
+            return result
 
         status_code = response.status_code
         category = _http_error_category(status_code)
@@ -269,6 +303,8 @@ class WordPressDistributionAdapter(DistributionAdapter):
                 return DistributionStatusResult(state=DistributionStatusLookupState.UNKNOWN)
             if not isinstance(posts, list) or not posts:
                 return DistributionStatusResult(state=DistributionStatusLookupState.NOT_FOUND)
+            if len(posts) != 1:
+                return DistributionStatusResult(state=DistributionStatusLookupState.UNKNOWN)
             post = posts[0]
             published_at = _parse_wordpress_datetime(post.get("date_gmt") or post.get("date"))
             return DistributionStatusResult(
