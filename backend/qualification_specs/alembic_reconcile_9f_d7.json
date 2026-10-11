@@ -1,0 +1,49 @@
+{
+  "qualification": "ALEMBIC_RECONCILE_9F_D7",
+  "status": "PASS",
+  "branch": "preprod/alembic-reconcile-9f-d7",
+  "frozen_glr2r1_base_commit": "872ad9be670f81c8c7611aa2d9225c764ec2f03f",
+  "production_deployed_commit_reference": "844370be4296d05b8b0be13b2d6cd7670e3e628b",
+  "restored_production_revision": "9f3c2a7d6b41",
+  "restored_production_migration_blob_sha": "4819b520d3ea58f70e2f279dd13865cf3cc50326",
+  "development_revision": "d7e8f9a0b1c2",
+  "common_parent_revision": "c3d4e5f6a7b8",
+  "merge_revision": "6c4e2f1a9b7d",
+  "pre_qualification_branch_head": "7b96cfdfe89a948293e427197877a249b6d969c1",
+  "static_qualification": {
+    "python_compile": "PASS",
+    "alembic_single_head": "6c4e2f1a9b7d",
+    "changed_files_before_evidence_record": [
+      "backend/alembic/versions/9f3c2a7d6b41_harden_production_schema_alignment.py",
+      "backend/alembic/versions/6c4e2f1a9b7d_merge_production_9f_and_economic_d7.py"
+    ]
+  },
+  "postgresql_qualification": {
+    "host_classification": "LOCAL_POSTGRESQL_ONLY",
+    "fresh_database_to_head": "PASS",
+    "production_9f_to_head": "PASS",
+    "development_d7_to_head": "PASS",
+    "expected_final_revision": "6c4e2f1a9b7d",
+    "disposable_database_cleanup": "COMPLETE"
+  },
+  "safety": {
+    "production_database_mutation": "NONE",
+    "production_deployment": "NONE",
+    "automatic_migrations_enabled": false,
+    "secrets_recorded": false,
+    "glr2r1_freeze_rewritten": false
+  },
+  "decision": {
+    "migration_reconciliation_qualification": "PASS",
+    "restore_9f_required": true,
+    "pure_merge_after_restore_safe": true,
+    "pre_merge_schema_repair_required": false,
+    "ready_for_controlled_preproduction_integration": true
+  },
+  "notes": [
+    "Historical production revision 9f3c2a7d6b41 and development revision d7e8f9a0b1c2 are sibling revisions from c3d4e5f6a7b8.",
+    "The exact historical 9f3c2a7d6b41 migration was restored from deployed production history before creating the pure merge revision.",
+    "Fresh, production-9f, and development-d7 migration paths all converged on the single Alembic head 6c4e2f1a9b7d using disposable local PostgreSQL databases.",
+    "The frozen GLR2R1 qualification record is intentionally not rewritten; any stale historical head metadata remains historical evidence."
+  ]
+}
