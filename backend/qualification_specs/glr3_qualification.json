@@ -1,0 +1,60 @@
+{
+  "qualification": "GLR3_CJ_FINANCIAL_INGESTION",
+  "status": "PASS",
+  "branch": "go-live/glr3-financial-ingestion",
+  "candidate_commit": "9fd2763b683e9736e2a93384ee6cd0ecb6165eb4",
+  "provider": "CJ Affiliate",
+  "live_provider_preflight": {
+    "http_status": 200,
+    "api_preflight": "PASS",
+    "authentication": "PASS",
+    "publisher_cid_match": "PASS",
+    "commission_count_observed": 0,
+    "payload_complete": true,
+    "token_printed": false
+  },
+  "local_qualification": {
+    "source": "operator terminal output",
+    "contract_and_regression_tests": {
+      "passed": 40,
+      "failed": 0,
+      "warning_count": 1,
+      "warning_classification": "NON_FUNCTIONAL_PYTEST_CACHE_PERMISSION_WARNING"
+    },
+    "expected_suite_total": 40,
+    "expected_suite_total_matched": true
+  },
+  "remote_audit": {
+    "base_commit": "8a61a99413866a58ed2fecf9b22ce16601b8368f",
+    "ahead_by_before_freeze_record": 1,
+    "behind_by": 0,
+    "candidate_files_changed": 8,
+    "migration_changes": "NONE"
+  },
+  "controls": {
+    "cj_credentials_environment_only": true,
+    "cj_credentials_accepted_in_api_payloads": false,
+    "operator_authenticated_sync_endpoint": true,
+    "correction_rows_preserved_as_distinct_signed_events": true,
+    "provider_event_idempotency_key": "affiliate_program_id + cj:commissionId",
+    "nonfinal_cj_actions_remain_pending": true,
+    "locked_or_closed_cj_actions_become_approved": true,
+    "existing_glr1_attribution_lineage_required": true
+  },
+  "safety": {
+    "secrets_recorded": false,
+    "production_database_mutation": "NONE",
+    "production_deployment": "NONE",
+    "automatic_production_migrations_enabled": false
+  },
+  "decision": {
+    "glr3_qualification": "PASS",
+    "ready_for_controlled_go_live_integration": true,
+    "ready_for_pilot_1_after_production_preflight_and_deployment": true
+  },
+  "notes": [
+    "The single pytest warning concerned inability to write .pytest_cache on the local Windows machine and did not affect test execution.",
+    "A zero CJ commission count is acceptable before Pilot 1; the live preflight proved API reachability, authentication, publisher identity, and response completion.",
+    "No GLR3 database migration is required."
+  ]
+}
