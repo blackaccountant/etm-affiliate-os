@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "phase": "GLR3",
+  "expected_branch": "go-live/glr3-financial-ingestion",
+  "expected_base_head": "8a61a99413866a58ed2fecf9b22ce16601b8368f",
+  "candidate_manifest": [
+    "backend/app/core/config.py",
+    "backend/app/services/affiliate_conversion_service.py",
+    "backend/app/services/attribution_conversion_bridge_service.py",
+    "backend/app/services/cj_commission_client.py",
+    "backend/app/services/cj_financial_ingestion_service.py",
+    "backend/app/api/affiliate_conversions.py",
+    "backend/tests/test_glr3_cj_financial_ingestion_contracts.py",
+    "backend/qualification_specs/glr3.json"
+  ],
+  "production_files": [
+    "backend/app/core/config.py",
+    "backend/app/services/affiliate_conversion_service.py",
+    "backend/app/services/attribution_conversion_bridge_service.py",
+    "backend/app/services/cj_commission_client.py",
+    "backend/app/services/cj_financial_ingestion_service.py",
+    "backend/app/api/affiliate_conversions.py"
+  ],
+  "test_files": [
+    "backend/tests/test_glr3_cj_financial_ingestion_contracts.py"
+  ],
+  "migration_expectation": "none",
+  "provider": "CJ Affiliate",
+  "provider_endpoint": "https://commissions.api.cj.com/query",
+  "live_provider_preflight": {
+    "required": true,
+    "expected_http_status": 200,
+    "secret_values_must_not_be_recorded": true
+  },
+  "required_checks": [
+    "git diff --check"
+  ],
+  "test_suites": [
+    {
+      "name": "GLR3 CJ contracts",
+      "kind": "contract",
+      "path": "backend/tests/test_glr3_cj_financial_ingestion_contracts.py",
+      "expected_collected": 10
+    },
+    {
+      "name": "Frozen GLR2 regression",
+      "kind": "regression",
+      "path": "backend/tests/test_glr2_wordpress_publication_contracts.py",
+      "expected_collected": 18
+    },
+    {
+      "name": "Frozen GLR1 regression",
+      "kind": "regression",
+      "path": "backend/tests/test_glr1_pilot_revenue_launch_contracts.py",
+      "expected_collected": 5
+    },
+    {
+      "name": "Frozen M11A16 regression",
+      "kind": "regression",
+      "path": "backend/tests/test_milestone_11_phase11a16_economic_recommendation_experiment_economic_evidence_contracts.py",
+      "expected_collected": 7
+    }
+  ],
+  "notes": [
+    "CJ credentials are environment-only and are never accepted in API payloads.",
+    "CJ correction rows are preserved as signed delta events keyed by unique commissionId.",
+    "Only locked or closed CJ actions become approved ETM earnings; new and extended remain pending.",
+    "The operator-authenticated sync is bound to an existing GLR1 distribution-run attribution lineage.",
+    "No production deployment or production database mutation is part of GLR3 candidate construction."
+  ],
+  "default_timeout_seconds": 600
+}

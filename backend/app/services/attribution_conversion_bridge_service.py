@@ -1,5 +1,6 @@
 """Atomic conversion/earning observation bridge into the M10A fact ledger."""
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -95,6 +96,84 @@ class AttributionConversionBridgeService:
                 occurred_at=occurred,
                 attribution_context_id=context.id,
                 attribution_click_id=attribution_click.id if attribution_click else None,
+                affiliate_link_id=link.id,
+                affiliate_conversion_id=conversion.id,
+            )
+            self.db.commit()
+            self.db.refresh(conversion)
+            return {
+                "conversion": conversion,
+                "earning": earning,
+                "fact": fact,
+                "created": created,
+            }
+        except Exception:
+            self.db.rollback()
+            raise
+
+
+    def record_provider_conversion(
+        self, *,
+        affiliate_program_id: int,
+        sale_amount: Decimal,
+        commission_amount: Decimal,
+        currency: str,
+        affiliate_link_id: int,
+        external_conversion_id: str,
+        customer_reference: Optional[str],
+        conversion_status: str,
+        source: str,
+        metadata_json: Optional[str],
+        occurred_at: datetime,
+    ):
+        """Record one provider financial event into conversion/earning/fact authority."""
+        try:
+            link = self._resolve_link(affiliate_link_id, None)
+            if link is None:
+                raise ValueError("Affiliate link not found")
+            if link.attribution_context_id is None:
+                raise ValueError("affiliate link is not attribution-enabled")
+            context = self.bridge.get_context(link.attribution_context_id)
+            if context is None:
+                raise ValueError("attribution context does not exist")
+            if (
+                link.affiliate_program_id != affiliate_program_id
+                or context.affiliate_program_id != affiliate_program_id
+            ):
+                raise ValueError("affiliate link and context do not match affiliate program")
+
+            external_id = self.conversions._external_id(external_conversion_id)
+            if external_id is None:
+                raise ValueError("provider conversion requires external_conversion_id")
+            lock_digest = bridge_digest(
+                "m10a3-conversion-lock-v1",
+                {
+                    "affiliate_program_id": affiliate_program_id,
+                    "external_conversion_id": external_id,
+                },
+            )
+            self.bridge.acquire_identity_lock("m10a3.conversion", lock_digest)
+
+            conversion, earning, created = (
+                self.conversions._upsert_provider_conversion_uncommitted(
+                    affiliate_program_id=affiliate_program_id,
+                    sale_amount=sale_amount,
+                    commission_amount=commission_amount,
+                    currency=currency,
+                    affiliate_link_id=link.id,
+                    external_conversion_id=external_id,
+                    customer_reference=customer_reference,
+                    conversion_status=conversion_status,
+                    source=source,
+                    metadata_json=metadata_json,
+                )
+            )
+            fact = self.facts.append(
+                fact_kind="CONVERSION_REPORTED",
+                source_namespace=CONVERSION_FACT_SOURCE_NAMESPACE,
+                source_event_key_digest=conversion_fact_digest(conversion.id),
+                occurred_at=legacy_utc(occurred_at),
+                attribution_context_id=context.id,
                 affiliate_link_id=link.id,
                 affiliate_conversion_id=conversion.id,
             )

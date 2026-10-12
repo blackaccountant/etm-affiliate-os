@@ -9,9 +9,12 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
+from app.api.operator_auth import require_operator_api_key
 from app.database.session import SessionLocal
 from app.attribution.bridge_contracts import AttributionBridgeConflict
 from app.models.affiliate_link import AffiliateLink
@@ -21,6 +24,8 @@ from app.services.affiliate_conversion_service import (
 from app.services.attribution_conversion_bridge_service import (
     AttributionConversionBridgeService,
 )
+from app.services.cj_commission_client import CjCommissionClientError
+from app.services.cj_financial_ingestion_service import CjFinancialIngestionService
 
 
 router = APIRouter(
@@ -64,6 +69,15 @@ class ConversionCreateRequest(BaseModel):
     metadata: Optional[dict] = None
 
     attribution_click_key: Optional[str] = None
+
+
+class CjCommissionSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    distribution_run_id: str
+    advertiser_id: str
+    since_posting_date: datetime
+    before_posting_date: datetime
 
 
 @router.post("/create")
@@ -161,6 +175,26 @@ def create_conversion(
             status_code=500,
             detail=str(exc),
         )
+
+
+@router.post("/cj/sync", dependencies=[Depends(require_operator_api_key)])
+def sync_cj_commissions(
+    payload: CjCommissionSyncRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return CjFinancialIngestionService(db).sync(
+            distribution_run_id=payload.distribution_run_id,
+            advertiser_id=payload.advertiser_id,
+            since_posting_date=payload.since_posting_date,
+            before_posting_date=payload.before_posting_date,
+        )
+    except AttributionBridgeConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CjCommissionClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/")

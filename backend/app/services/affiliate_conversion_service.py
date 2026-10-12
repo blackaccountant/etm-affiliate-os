@@ -160,6 +160,155 @@ class AffiliateConversionService:
     def _decimal_equal(left, right, quantum: str) -> bool:
         return Decimal(str(left)).quantize(Decimal(quantum)) == Decimal(str(right)).quantize(Decimal(quantum))
 
+    @staticmethod
+    def _provider_values(
+        sale_amount,
+        currency,
+        conversion_status,
+        commission_amount,
+        source,
+    ):
+        sale = Decimal(str(sale_amount))
+        commission = Decimal(str(commission_amount))
+        status = str(conversion_status).strip().lower()
+        if status not in {"pending", "approved"}:
+            raise ValueError("provider conversion status must be pending or approved")
+        normalized_currency = str(currency).strip().upper()
+        if not normalized_currency:
+            raise ValueError("provider conversion currency is required")
+        rate = (
+            Decimal("0")
+            if sale == 0
+            else (commission / sale) * Decimal("100")
+        )
+        return {
+            "sale_amount": sale,
+            "currency": normalized_currency,
+            "conversion_status": status,
+            "commission_rate": rate,
+            "commission_amount": commission,
+            "source": str(source).strip(),
+            "earning_status": "approved" if status == "approved" else "pending",
+        }
+
+    def _upsert_provider_conversion_uncommitted(
+        self,
+        *,
+        affiliate_program_id: int,
+        sale_amount: Decimal,
+        commission_amount: Decimal,
+        currency: str,
+        affiliate_link_id: int,
+        external_conversion_id: str,
+        customer_reference: Optional[str],
+        conversion_status: str,
+        source: str,
+        metadata_json: Optional[str],
+    ):
+        """Upsert one immutable provider financial event without committing.
+
+        Provider correction rows are represented as distinct signed-delta events
+        using their own external conversion IDs. The same provider event may
+        later promote from pending to approved, but immutable commercial values
+        may not change.
+        """
+        _, link = self._program_and_link(
+            affiliate_program_id,
+            affiliate_link_id,
+            None,
+        )
+        if link is None:
+            raise ValueError("provider conversion requires affiliate_link_id")
+        external_id = self._external_id(external_conversion_id)
+        if external_id is None:
+            raise ValueError("provider conversion requires external_conversion_id")
+        values = self._provider_values(
+            sale_amount,
+            currency,
+            conversion_status,
+            commission_amount,
+            source,
+        )
+        existing = self.db.query(AffiliateConversion).filter_by(
+            affiliate_program_id=affiliate_program_id,
+            external_conversion_id=external_id,
+        ).first()
+        now = datetime.utcnow()
+        if existing is not None:
+            same = (
+                existing.affiliate_link_id == link.id
+                and self._decimal_equal(existing.sale_amount, values["sale_amount"], "0.01")
+                and existing.currency == values["currency"]
+                and self._decimal_equal(existing.commission_rate, values["commission_rate"], "0.0001")
+                and self._decimal_equal(existing.commission_amount, values["commission_amount"], "0.01")
+                and existing.source == values["source"]
+            )
+            if not same:
+                raise AttributionBridgeConflict(
+                    "provider conversion identity conflicts with immutable commercial input"
+                )
+            earning = self.db.query(AffiliateEarning).filter_by(
+                conversion_id=existing.id
+            ).one_or_none()
+            if earning is None:
+                raise AttributionBridgeConflict(
+                    "existing provider conversion has no durable earning"
+                )
+            if (
+                existing.conversion_status == "pending"
+                and values["conversion_status"] == "approved"
+            ):
+                existing.conversion_status = "approved"
+                earning.status = "approved"
+            elif (
+                existing.conversion_status == "approved"
+                and values["conversion_status"] == "pending"
+            ):
+                # Provider lifecycle must never regress ETM payout authority.
+                pass
+            else:
+                existing.conversion_status = values["conversion_status"]
+                earning.status = values["earning_status"]
+            existing.metadata_json = metadata_json
+            existing.updated_at = now
+            earning.updated_at = now
+            return existing, earning, False
+
+        conversion = AffiliateConversion(
+            affiliate_link_id=link.id,
+            affiliate_program_id=affiliate_program_id,
+            external_conversion_id=external_id,
+            customer_reference=customer_reference,
+            sale_amount=values["sale_amount"],
+            currency=values["currency"],
+            conversion_status=values["conversion_status"],
+            commission_rate=values["commission_rate"],
+            commission_amount=values["commission_amount"],
+            source=values["source"],
+            metadata_json=metadata_json,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(conversion)
+        self.db.flush()
+        earning = AffiliateEarning(
+            conversion_id=conversion.id,
+            affiliate_program_id=affiliate_program_id,
+            gross_amount=values["sale_amount"],
+            commission_rate=values["commission_rate"],
+            commission_amount=values["commission_amount"],
+            currency=values["currency"],
+            status=values["earning_status"],
+            payout_reference=None,
+            paid_at=None,
+            payout_id=None,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.add(earning)
+        self.db.flush()
+        return conversion, earning, True
+
     def _assert_strict_replay(self, existing, link, values):
         same = (
             existing.affiliate_link_id == (link.id if link else None)

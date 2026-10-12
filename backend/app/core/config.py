@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     CMS_WORDPRESS_USERNAME: str = ""
     CMS_WORDPRESS_APP_PASSWORD: str = ""
     PUBLIC_API_BASE_URL: str = ""
+    CJ_PUBLISHER_CID: str = ""
+    CJ_PERSONAL_ACCESS_TOKEN: str = ""
+    CJ_COMMISSIONS_API_URL: str = "https://commissions.api.cj.com/query"
+    CJ_REQUEST_TIMEOUT_SECONDS: float = Field(default=30.0, ge=1.0, le=60.0)
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
